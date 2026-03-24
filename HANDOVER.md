@@ -19,6 +19,7 @@
 10. [Card Images](#10-card-images)
 11. [Running Scrapers Manually](#11-running-scrapers-manually)
 12. [Known Gaps and Future Improvements](#12-known-gaps-and-future-improvements)
+13. [Frontend Developer Setup & Collaboration](#13-frontend-developer-setup--collaboration)
 
 ---
 
@@ -1056,3 +1057,167 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 | Some bank scrapers return 0 when site layout changes | Stale data after 7 days | Monitor `/api/scrape-logs`; known fallback offers in scraper code act as backup |
 | Playwright scrapers not running in production | National Bank and Tangerine missing | Only runs via manual `npm run scrape:national-bank` locally |
 | `blog_posts.content_mdx` not exposed via API | Can't render blog posts | Query Supabase directly with the public anon key for individual post content |
+
+---
+
+## 13. Frontend Developer Setup & Collaboration
+
+---
+
+### Local setup
+
+**1. Clone the repo**
+
+```bash
+git clone https://github.com/ryansandhu/smart-card-offers.git
+cd smart-card-offers
+```
+
+**2. Install dependencies**
+
+```bash
+npm install
+```
+
+**3. Create your `.env.local` file**
+
+Create a file called `.env.local` in the project root with the following variables. Ryan will send you these values directly — do not share them publicly.
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+> These two variables are all a frontend developer needs. The other variables (`SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `RESEND_API_KEY`, `IP_HASH_SALT`) are backend-only — Ryan manages them.
+
+**4. Start the dev server**
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). The app connects to the live Supabase database, so you'll see real card data immediately.
+
+---
+
+### Supabase access
+
+**Getting access**
+
+Ryan needs to invite you to the Supabase project. Once invited, you can view the database tables and schema in the Supabase dashboard (read-only access is sufficient for frontend work).
+
+**Ryan — how to send the invite:**
+
+1. Go to [supabase.com](https://supabase.com) and open the Smart Card Offers project
+2. Click **Project Settings** (gear icon, bottom-left sidebar)
+3. Click **Team** in the left menu
+4. Click **Invite** and enter your cousin's email address
+5. Set the role to **Developer**
+6. Click **Send Invite**
+
+Your cousin will receive an email to accept the invite and create a Supabase account.
+
+**Which key to use in frontend code**
+
+| Key | Use in frontend? | Notes |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ Yes | Safe — respects Row Level Security. All public API data is readable. |
+| `SUPABASE_SERVICE_ROLE_KEY` | ❌ Never | Bypasses all security. Backend use only. |
+
+The `NEXT_PUBLIC_` prefix on the anon key means Next.js will automatically include it in browser bundles — this is intentional and safe. Never add `NEXT_PUBLIC_` to the service role key.
+
+---
+
+### How collaboration works
+
+**Ownership split**
+
+| Area | Owner | Folders / Files |
+|---|---|---|
+| Backend | Ryan | `app/api/`, `lib/`, `scrapers/`, `scripts/`, `types/`, `supabase/` |
+| Frontend | Cousin | `app/page.tsx`, `app/**/page.tsx`, `app/**/layout.tsx`, any new `components/` folder |
+
+**The rule: don't edit each other's folders.**
+
+- Ryan does not touch frontend pages or components.
+- Cousin does not touch API routes, scrapers, lib, or types.
+- This keeps git merges clean and avoids stepping on each other.
+
+**If you need something from the backend** (a new API field, a new endpoint, a schema change) — ask Ryan to add it. Don't reach into `lib/supabase.ts` or API routes directly.
+
+---
+
+### Daily workflow for the frontend developer
+
+**Before starting work each day — pull latest changes:**
+
+```bash
+git pull origin main
+```
+
+This is important. Ryan may have pushed backend changes overnight (new API fields, schema updates) that your frontend code depends on.
+
+**Making and pushing frontend changes:**
+
+```bash
+# Stage your changed files
+git add app/page.tsx app/components/CardList.tsx   # list specific files
+
+# Commit with a clear message
+git commit -m "Add card listing page with filters"
+
+# Push to GitHub
+git push origin main
+```
+
+Vercel automatically deploys every push to `main`. Your changes go live within ~60 seconds of pushing.
+
+**Never force-push:**
+
+```bash
+# Don't do this — it can overwrite Ryan's backend commits
+git push --force origin main
+```
+
+If you get a "rejected" error on push, run `git pull origin main` first to merge in any new backend changes, then push again.
+
+---
+
+### Calling the API from frontend code
+
+All data comes from the API routes documented in [Section 5](#5-api-endpoints). You do not need to query Supabase directly from the frontend — just fetch from the API.
+
+**Example: fetch and display cards**
+
+```tsx
+// app/page.tsx or any Server Component
+async function getCards() {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/cards?limit=20`, {
+    next: { revalidate: 3600 },  // cache for 1 hour
+  })
+  return res.json()
+}
+
+export default async function HomePage() {
+  const { cards } = await getCards()
+  return (
+    <main>
+      {cards.map(card => (
+        <div key={card.id}>
+          <img src={card.image_url ?? '/images/cards/placeholder.png'} alt={card.name} />
+          <h2>{card.name}</h2>
+          <p>{card.current_offer?.[0]?.headline}</p>
+        </div>
+      ))}
+    </main>
+  )
+}
+```
+
+**Key things to remember when building the frontend:**
+
+- `image_url` can be `null` — always show a placeholder (see [Section 10](#10-card-images))
+- `points_value` and `cashback_value` are mutually exclusive — check which one is set (see [Section 8](#8-data-quality-notes))
+- Use `confidence_score` to show verified vs unverified badges (see [Section 8](#8-data-quality-notes))
+- Use `cpp_mid` from `/api/valuations` to show "≈ $X value" next to point amounts (see [Section 9](#9-points-valuations--dollar-value-calculation))
+- Track apply clicks by calling `POST /api/track-click` before redirecting to the card's apply URL (see [Section 5](#5-api-endpoints))
