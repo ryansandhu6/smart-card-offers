@@ -8,7 +8,7 @@ import { ChurningCanadaScraper } from '@/scrapers/churningcanada'
 import { AmexScraper } from '@/scrapers/amex'
 import { TDScraper } from '@/scrapers/td'
 import { ScotiabankScraper, BMOScraper, RBCScraper, CIBCScraper } from '@/scrapers/banks'
-import { RatehubCardsScraper, MintFlyingScraper } from '@/scrapers/aggregators'
+import { RatehubCardsScraper, MintFlyingScraper, PrinceOfTravelScraper } from '@/scrapers/aggregators'
 import { RatehubScraper, BigBankMortgageScraper } from '@/scrapers/mortgage-rates'
 
 export async function POST(req: NextRequest) {
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     new CIBCScraper(),
     new RatehubCardsScraper(),
     new MintFlyingScraper(),
+    new PrinceOfTravelScraper(),
     new RatehubScraper(),
     new BigBankMortgageScraper(),
   ]

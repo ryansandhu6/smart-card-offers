@@ -18,6 +18,7 @@
     "scrape:mintflying": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts mintflying",
     "scrape:ratehub-cards": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts ratehub-cards",
     "scrape:churningcanada": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts churningcanada",
+    "scrape:princeoftravel": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts princeoftravel",
     "scrape:national-bank": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts national-bank",
     "scrape:tangerine": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts tangerine",
     "download-images": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/download-card-images.ts"

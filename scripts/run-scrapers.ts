@@ -6,7 +6,7 @@ import { AmexScraper } from '../scrapers/amex'
 import { TDScraper } from '../scrapers/td'
 import { ScotiabankScraper, BMOScraper, RBCScraper, CIBCScraper } from '../scrapers/banks'
 import { RatehubScraper, BigBankMortgageScraper } from '../scrapers/mortgage-rates'
-import { MintFlyingScraper, RatehubCardsScraper } from '../scrapers/aggregators'
+import { MintFlyingScraper, RatehubCardsScraper, PrinceOfTravelScraper } from '../scrapers/aggregators'
 import { ChurningCanadaScraper } from '../scrapers/churningcanada'
 import { NationalBankScraper, TangerineScraper } from '../scrapers/playwright-scraper'
 
@@ -31,9 +31,10 @@ const MORTGAGE_SCRAPERS = {
 // creditcardgenius: Angular SPA — consistently returns 0 (removed)
 // flytrippers: JS-rendered content — consistently returns 0 (removed)
 const AGGREGATOR_SCRAPERS = {
-  mintflying:      () => new MintFlyingScraper(),
-  'ratehub-cards': () => new RatehubCardsScraper(),
-  churningcanada:  () => new ChurningCanadaScraper(),
+  mintflying:       () => new MintFlyingScraper(),
+  'ratehub-cards':  () => new RatehubCardsScraper(),
+  churningcanada:   () => new ChurningCanadaScraper(),
+  princeoftravel:   () => new PrinceOfTravelScraper(),
 }
 
 async function main() {

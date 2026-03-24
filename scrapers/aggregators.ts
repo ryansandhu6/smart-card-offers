@@ -2,11 +2,12 @@
 // Scrapers for Canadian credit card aggregator sites
 //
 // Robots.txt checked 2026-03-23:
-//   mintflying.com      Allow: /                            ✅ built
-//   creditcardgenius.ca Allow: / (blocks /go/ /offers/*)   ✅ built (JS-rendered — text scan)
-//   ratehub.ca          Allow: / (blocks apply pages only)  ✅ built (Next.js — __NEXT_DATA__ + scan)
-//   flytrippers.com     Allow: / (blocks /*?*mdrv only)    ✅ built (WordPress — heading scan)
-//   greedyrates.ca      301 → money.ca, robots.txt → 403   ⛔ skipped (cannot verify policy)
+//   mintflying.com           Allow: /                            ✅ built
+//   creditcardgenius.ca      Allow: / (blocks /go/ /offers/*)   ✅ built (JS-rendered — text scan)
+//   ratehub.ca               Allow: / (blocks apply pages only)  ✅ built (Next.js — __NEXT_DATA__ + scan)
+//   flytrippers.com          Allow: / (blocks /*?*mdrv only)    ✅ built (WordPress — heading scan)
+//   greedyrates.ca           301 → money.ca, robots.txt → 403   ⛔ skipped (cannot verify policy)
+//   princeoftravel.com       Allow: / (blocks /account/ /api/ /dev/ only) ✅ built (Next.js App Router — RSC + section parse)
 
 import * as cheerio from 'cheerio'
 import { BaseScraper } from '../lib/scraper-base'
@@ -400,3 +401,127 @@ export class RatehubCardsScraper extends BaseScraper {
   }
 }
 
+
+// -----------------------------------------------
+// PrinceOfTravel
+// robots.txt: Allow: / (blocks /account/ /api/ /dev/ only)
+//
+// Scrapes /best-credit-cards/overall/ — the site's top-10 overall
+// Canadian credit card picks with full offer details.
+//
+// HTML structure (server-rendered Next.js App Router):
+//   Each card renders inside a <section>. The welcome bonus label
+//   "Welcome bonus" is a <span> and its VALUE is the immediately
+//   following sibling <span>. Cards appear TWICE per section
+//   (once mobile layout, once desktop layout) — deduplicated by
+//   card name via a Set.
+//   Card name: <a href="/credit-cards/..."><span>Card Name</span></a>
+//
+// Fallback: scanPageOffers text scan if the HTML structure changes.
+// -----------------------------------------------
+export class PrinceOfTravelScraper extends BaseScraper {
+  name = 'princeoftravel'
+  issuerSlug = 'aggregator'
+  // sourcePriority = 2, isVerified = false — inherited from BaseScraper defaults
+
+  private readonly SOURCE_URL = 'https://princeoftravel.com/best-credit-cards/overall/'
+
+  async scrape(): Promise<ScrapedOffer[]> {
+    const res = await this.fetchWithTimeout(this.SOURCE_URL, {
+      headers: { 'User-Agent': 'Mozilla/5.0 Chrome/120', 'Accept-Language': 'en-CA' },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    const html = await res.text()
+    const $ = cheerio.load(html)
+    const offers: ScrapedOffer[] = []
+    // Deduplicate: each card appears twice in the HTML (mobile + desktop layout)
+    const seen = new Set<string>()
+
+    // Primary strategy: walk every "Welcome bonus" label span in the page.
+    // The label and its value are siblings inside a flex container:
+    //   <div class="flex items-center gap-3">
+    //     <span>Welcome bonus</span>           ← label
+    //     <span>110,000 Membership Rewards…</span>  ← value
+    //   </div>
+    $('span').each((_, labelEl) => {
+      if (!/^welcome bonus$/i.test($(labelEl).text().trim())) return
+
+      // Value is the immediately following sibling <span>
+      const bonusHeadline = $(labelEl).next('span').text().replace(/\s+/g, ' ').trim()
+      if (!bonusHeadline) return
+
+      // Card name: nearest <a href="/credit-cards/..."><span> ancestor group
+      const $container = $(labelEl).closest('section, div[class*="rounded-xl"], div[class*="not-prose"]')
+      let cardName = ''
+      let applyUrl: string | undefined
+      $container.find('a[href*="/credit-cards/"]').each((_, a) => {
+        const name = $(a).children('span').first().text().trim()
+        if (name && !cardName) {
+          cardName = name
+          const href = $(a).attr('href') ?? ''
+          applyUrl = href.startsWith('http') ? href : `https://princeoftravel.com${href}`
+        }
+      })
+
+      if (!cardName || seen.has(cardName)) return
+
+      // Spend details from the first breakdown bullet below the bonus value
+      // e.g. "• Earn 80,000 points upon spending $10,000 in the first 3 months"
+      const $bonusBlock = $(labelEl).closest('div[class*="border"]')
+      const firstBullet = $bonusBlock.next().find('p').first()
+        .text().replace(/^[•·]\s*/, '').replace(/\s+/g, ' ').trim()
+
+      // Build richer headline if spend info is in the bullet but not in bonusHeadline
+      let headline = bonusHeadline
+      if (firstBullet && !bonusHeadline.includes('$')) {
+        const spendMatch = firstBullet.match(/spending\s+(\$[\d,]+)\s+in\s+the\s+first\s+(\d+)\s+(month|day)/i)
+        if (spendMatch) {
+          headline = `${bonusHeadline} after ${spendMatch[1]} spend in ${spendMatch[2]} ${spendMatch[3]}s`
+        }
+      }
+
+      const issuer_slug = resolveIssuer(cardName)
+      if (!KNOWN_ISSUER_SLUGS.has(issuer_slug)) return
+
+      seen.add(cardName)
+
+      const spendInfo = this.parseSpend(firstBullet || headline)
+      offers.push({
+        card_name: cardName,
+        issuer_slug,
+        offer_type: 'welcome_bonus',
+        headline: headline.slice(0, 250),
+        points_value: this.parsePoints(bonusHeadline),
+        spend_requirement: spendInfo?.amount,
+        spend_timeframe_days: spendInfo?.days,
+        is_limited_time: false,
+        source_url: this.SOURCE_URL,
+        apply_url: applyUrl,
+      })
+    })
+
+    // Fallback: full-page text scan if layout changes break the label selector
+    if (offers.length === 0) {
+      for (const t of scanPageOffers($)) {
+        const issuer_slug = resolveIssuer(t)
+        if (!KNOWN_ISSUER_SLUGS.has(issuer_slug)) continue
+        offers.push({
+          card_name: inferCardName(t),
+          issuer_slug,
+          offer_type: 'welcome_bonus',
+          headline: t.slice(0, 250),
+          points_value: this.parsePoints(t),
+          spend_requirement: this.parseSpend(t)?.amount,
+          spend_timeframe_days: this.parseSpend(t)?.days,
+          is_limited_time: /limited time|expires/i.test(t),
+          source_url: this.SOURCE_URL,
+        })
+      }
+    }
+
+    const filtered = offers.filter(o => KNOWN_ISSUER_SLUGS.has(o.issuer_slug))
+    console.log(`[princeoftravel] found ${offers.length} offers, ${filtered.length} with known issuers`)
+    return filtered
+  }
+}
