@@ -1,0 +1,280 @@
+-- ============================================================
+-- Smart Card Offers — Supabase Schema
+-- Single source of truth — includes all migrations 001–003.
+-- Run this in your Supabase SQL editor to set up a fresh database.
+-- ============================================================
+
+-- -----------------------------------------------
+-- ISSUERS (American Express, TD, Scotiabank, etc.)
+-- -----------------------------------------------
+CREATE TABLE issuers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  slug TEXT NOT NULL UNIQUE,
+  logo_url TEXT,
+  website TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- -----------------------------------------------
+-- CREDIT CARDS
+-- -----------------------------------------------
+CREATE TABLE credit_cards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  issuer_id UUID REFERENCES issuers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  card_type TEXT CHECK (card_type IN ('visa', 'mastercard', 'amex', 'discover')),
+  card_network TEXT,                        -- "Visa", "Mastercard", "American Express"
+  tier TEXT CHECK (tier IN ('no-fee', 'entry', 'mid', 'premium', 'super-premium')),
+  annual_fee NUMERIC(8,2) DEFAULT 0,
+  annual_fee_waived_first_year BOOLEAN DEFAULT false,
+  rewards_program TEXT,                     -- e.g. "Amex MR", "Aeroplan", "Scene+"
+  rewards_type TEXT CHECK (rewards_type IN ('points', 'cashback', 'hybrid')),
+  earn_rate_base NUMERIC(5,2),              -- e.g. 1.0 point per $1
+  earn_rate_multipliers JSONB,              -- {"dining": 3, "groceries": 2}
+  transfer_partners JSONB,                  -- ["Air Canada", "British Airways"]
+  lounge_access BOOLEAN DEFAULT false,
+  travel_insurance BOOLEAN DEFAULT false,
+  purchase_protection BOOLEAN DEFAULT false,
+  foreign_transaction_fee NUMERIC(4,2),
+  credit_score_min TEXT CHECK (credit_score_min IN ('fair', 'good', 'very-good', 'excellent')),
+  apply_url TEXT,
+  referral_url TEXT,                        -- YOUR affiliate/referral link
+  image_url TEXT,
+  -- Display / marketing fields (migration 001)
+  short_description TEXT,
+  pros TEXT[],
+  cons TEXT[],
+  best_for TEXT[],
+  min_income INTEGER,
+  card_color TEXT,
+  is_active BOOLEAN DEFAULT true,
+  is_featured BOOLEAN DEFAULT false,
+  tags TEXT[],                              -- ["travel", "no-fx-fee", "aeroplan"]
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- -----------------------------------------------
+-- CARD OFFERS (welcome bonuses, limited-time)
+-- -----------------------------------------------
+CREATE TABLE card_offers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_id UUID REFERENCES credit_cards(id) ON DELETE CASCADE,
+  offer_type TEXT CHECK (offer_type IN ('welcome_bonus', 'limited_time', 'retention', 'referral')),
+  headline TEXT NOT NULL,                   -- "70,000 Amex MR points"
+  details TEXT,                             -- Full offer description
+  points_value INTEGER,                     -- Raw points/miles offered
+  cashback_value NUMERIC(8,2),              -- If cash back offer
+  spend_requirement NUMERIC(10,2),          -- e.g. 10000
+  spend_timeframe_days INTEGER,             -- e.g. 90
+  extra_perks TEXT[],                       -- ["First year fee waived", "Priority Pass"]
+  is_limited_time BOOLEAN DEFAULT false,
+  expires_at DATE,
+  is_verified BOOLEAN DEFAULT false,        -- Manually verified by you
+  source_url TEXT,                          -- Where we scraped/found this
+  scraped_at TIMESTAMPTZ,
+  -- Data trust system (migration 003)
+  source_priority INTEGER NOT NULL DEFAULT 2,  -- 1=bank-direct, 2=aggregator, 3=hardcoded
+  last_seen_at TIMESTAMPTZ,
+  confidence_score INTEGER,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  -- Unique constraint required for upsert onConflict (migration 002)
+  CONSTRAINT card_offers_card_offer_headline_key UNIQUE (card_id, offer_type, headline)
+);
+
+-- -----------------------------------------------
+-- MORTGAGE RATES
+-- -----------------------------------------------
+CREATE TABLE mortgage_rates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lender TEXT NOT NULL,
+  lender_slug TEXT NOT NULL,
+  rate_type TEXT CHECK (rate_type IN ('fixed', 'variable', 'hybrid')),
+  term_years INTEGER,                        -- 1, 2, 3, 5, 10
+  rate NUMERIC(5,3) NOT NULL,                -- e.g. 5.240
+  posted_rate NUMERIC(5,3),                  -- Bank's posted (non-discounted) rate
+  insured_rate NUMERIC(5,3),
+  uninsured_rate NUMERIC(5,3),
+  source_url TEXT,
+  scraped_at TIMESTAMPTZ DEFAULT now(),
+  is_active BOOLEAN DEFAULT true,
+  notes TEXT,
+  UNIQUE (lender_slug, rate_type, term_years)
+);
+
+-- -----------------------------------------------
+-- POINTS VALUATIONS (cpp = cents per point)
+-- -----------------------------------------------
+CREATE TABLE points_valuations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  program TEXT NOT NULL,                     -- "Amex MR", "Aeroplan"
+  cpp_low NUMERIC(5,3),                      -- Conservative estimate
+  cpp_mid NUMERIC(5,3),                      -- Our recommended value
+  cpp_high NUMERIC(5,3),                     -- Aspirational (business class etc.)
+  methodology TEXT,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- -----------------------------------------------
+-- NEWSLETTER SUBSCRIBERS
+-- -----------------------------------------------
+CREATE TABLE newsletter_subscribers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL UNIQUE,
+  first_name TEXT,
+  source TEXT,                               -- "homepage", "card-page", "blog"
+  is_confirmed BOOLEAN DEFAULT false,
+  confirmation_token TEXT,
+  subscribed_at TIMESTAMPTZ DEFAULT now(),
+  unsubscribed_at TIMESTAMPTZ,
+  tags TEXT[]                                -- For segmentation: ["churner", "beginner"]
+);
+
+-- -----------------------------------------------
+-- REFERRAL CLICKS (track your affiliate traffic)
+-- -----------------------------------------------
+CREATE TABLE referral_clicks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_id UUID REFERENCES credit_cards(id),
+  offer_id UUID REFERENCES card_offers(id),
+  source_page TEXT,
+  utm_source TEXT,
+  utm_medium TEXT,
+  utm_campaign TEXT,
+  ip_hash TEXT,                              -- Hashed for privacy
+  user_agent TEXT,
+  clicked_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- -----------------------------------------------
+-- BLOG POSTS (if using Supabase instead of Sanity)
+-- -----------------------------------------------
+CREATE TABLE blog_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  excerpt TEXT,
+  content_mdx TEXT,
+  author TEXT DEFAULT 'Smart Card Offers',
+  cover_image TEXT,
+  category TEXT CHECK (category IN (
+    'how-to', 'card-review', 'points-guide',
+    'transfer-partners', 'news', 'deals'
+  )),
+  tags TEXT[],
+  related_card_ids UUID[],
+  is_published BOOLEAN DEFAULT false,
+  published_at TIMESTAMPTZ,
+  seo_title TEXT,
+  seo_description TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- -----------------------------------------------
+-- SCRAPE LOGS (track scraper health)
+-- -----------------------------------------------
+CREATE TABLE scrape_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scraper_name TEXT NOT NULL,
+  status TEXT CHECK (status IN ('success', 'partial', 'failed')),
+  records_found INTEGER DEFAULT 0,
+  records_updated INTEGER DEFAULT 0,
+  error_message TEXT,
+  duration_ms INTEGER,
+  ran_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- -----------------------------------------------
+-- UPDATED_AT AUTO-UPDATE TRIGGER
+-- -----------------------------------------------
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER credit_cards_updated_at
+  BEFORE UPDATE ON credit_cards
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER card_offers_updated_at
+  BEFORE UPDATE ON card_offers
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- -----------------------------------------------
+-- INDEXES
+-- -----------------------------------------------
+CREATE INDEX idx_cards_issuer ON credit_cards(issuer_id);
+CREATE INDEX idx_cards_tags ON credit_cards USING GIN(tags);
+CREATE INDEX idx_cards_active ON credit_cards(is_active);
+CREATE INDEX idx_cards_best_for ON credit_cards USING GIN(best_for);
+CREATE INDEX idx_offers_card ON card_offers(card_id);
+CREATE INDEX idx_offers_active_limited ON card_offers(is_active, is_limited_time);
+CREATE INDEX idx_offers_expires ON card_offers(expires_at);
+-- Trust system indexes (migration 003)
+CREATE INDEX idx_offers_priority_points
+  ON card_offers(source_priority ASC, points_value DESC NULLS LAST)
+  WHERE is_active = true;
+CREATE INDEX idx_offers_last_seen
+  ON card_offers(last_seen_at)
+  WHERE is_active = true;
+CREATE INDEX idx_mortgage_rates_type_term ON mortgage_rates(rate_type, term_years);
+CREATE INDEX idx_blog_published ON blog_posts(is_published, published_at DESC);
+CREATE INDEX idx_scrape_logs_name_ran ON scrape_logs(scraper_name, ran_at DESC);
+
+-- -----------------------------------------------
+-- ROW LEVEL SECURITY
+-- -----------------------------------------------
+ALTER TABLE newsletter_subscribers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE referral_clicks ENABLE ROW LEVEL SECURITY;
+
+-- Public can read cards, offers, mortgage rates, blog, valuations
+CREATE POLICY "Public read cards"         ON credit_cards      FOR SELECT USING (is_active = true);
+CREATE POLICY "Public read offers"        ON card_offers       FOR SELECT USING (is_active = true);
+CREATE POLICY "Public read mortgage rates" ON mortgage_rates   FOR SELECT USING (is_active = true);
+CREATE POLICY "Public read blog"          ON blog_posts        FOR SELECT USING (is_published = true);
+CREATE POLICY "Public read valuations"    ON points_valuations FOR SELECT USING (true);
+
+-- Only service role can write (your scrapers use service role key)
+CREATE POLICY "Service role full access newsletter"
+  ON newsletter_subscribers USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access clicks"
+  ON referral_clicks USING (auth.role() = 'service_role');
+
+-- -----------------------------------------------
+-- SEED ISSUERS
+-- -----------------------------------------------
+INSERT INTO issuers (name, slug, website) VALUES
+  ('American Express', 'amex',         'https://www.americanexpress.com/ca'),
+  ('TD',               'td',           'https://www.td.com/ca/en/personal-banking/products/credit-cards'),
+  ('Scotiabank',       'scotiabank',   'https://www.scotiabank.com/ca/en/personal/credit-cards.html'),
+  ('BMO',              'bmo',          'https://www.bmo.com/en-ca/main/personal/credit-cards'),
+  ('CIBC',             'cibc',         'https://www.cibc.com/en/personal-banking/credit-cards.html'),
+  ('RBC',              'rbc',          'https://www.rbcroyalbank.com/credit-cards/index.html'),
+  ('National Bank',    'national-bank','https://www.nbc.ca/personal/credit-cards.html'),
+  ('HSBC',             'hsbc',         'https://www.hsbc.ca/credit-cards'),
+  ('Tangerine',        'tangerine',    'https://www.tangerine.ca/en/products/spending/creditcard'),
+  ('PC Financial',     'pc-financial', 'https://www.pcfinancial.ca/en/credit-cards'),
+  ('Desjardins',       'desjardins',   'https://www.desjardins.com/ca/personal/accounts-services/credit-cards'),
+  ('MBNA',             'mbna',         'https://www.mbna.ca'),
+  ('Rogers Bank',      'rogers-bank',  'https://www.rogersbank.com');
+
+-- -----------------------------------------------
+-- SEED POINTS VALUATIONS
+-- -----------------------------------------------
+INSERT INTO points_valuations (program, cpp_low, cpp_mid, cpp_high, methodology) VALUES
+  ('Amex MR',       1.0, 1.8, 2.5, 'Based on Air Canada business class transfer at 1:1'),
+  ('Aeroplan',      1.2, 2.0, 3.0, 'Based on partner redemptions; Star Alliance business class'),
+  ('Scene+',        0.8, 1.0, 1.0, 'Fixed 1cpp at Cineplex/groceries'),
+  ('BMO Rewards',   0.5, 0.67, 0.67,'Fixed redemption toward travel'),
+  ('CIBC Aventura', 0.8, 1.0, 1.5, 'Best through CIBC Aventura travel portal'),
+  ('RBC Avion',     0.8, 1.3, 2.0, 'British Airways transfer and WestJet redemptions'),
+  ('WestJet Dollars',1.0, 1.0, 1.0,'Fixed 1:1 toward WestJet flights');

@@ -6,21 +6,40 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "scrape": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts",
+    "scrape:amex": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts amex",
+    "scrape:td": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts td",
+    "scrape:scotiabank": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts scotiabank",
+    "scrape:bmo": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts bmo",
+    "scrape:rbc": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts rbc",
+    "scrape:cibc": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts cibc",
+    "scrape:mortgage": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts ratehub",
+    "scrape:mintflying": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts mintflying",
+    "scrape:ratehub-cards": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts ratehub-cards",
+    "scrape:churningcanada": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts churningcanada",
+    "scrape:national-bank": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts national-bank",
+    "scrape:tangerine": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/run-scrapers.ts tangerine",
+    "download-images": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/download-card-images.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.100.0",
+    "cheerio": "^1.2.0",
     "next": "16.2.1",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "resend": "^6.9.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.3.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }
