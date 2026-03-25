@@ -7,9 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ChurningCanadaScraper } from '@/scrapers/churningcanada'
 import { AmexScraper } from '@/scrapers/amex'
 import { TDScraper } from '@/scrapers/td'
-import { ScotiabankScraper, BMOScraper, RBCScraper, CIBCScraper } from '@/scrapers/banks'
-import { RatehubCardsScraper, MintFlyingScraper, PrinceOfTravelScraper } from '@/scrapers/aggregators'
-import { RatehubScraper, BigBankMortgageScraper } from '@/scrapers/mortgage-rates'
+import { MintFlyingScraper, PrinceOfTravelScraper } from '@/scrapers/aggregators'
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get('authorization')
@@ -20,20 +18,13 @@ export async function POST(req: NextRequest) {
   const ran_at = new Date().toISOString()
   const results: Array<Record<string, unknown>> = []
 
-  // Run scrapers in priority order: community data → bank-direct → aggregators → mortgage
+  // Run scrapers in priority order: community data → bank-direct → aggregators
   const scrapers = [
     new ChurningCanadaScraper(),
     new AmexScraper(),
     new TDScraper(),
-    new ScotiabankScraper(),
-    new BMOScraper(),
-    new RBCScraper(),
-    new CIBCScraper(),
-    new RatehubCardsScraper(),
     new MintFlyingScraper(),
     new PrinceOfTravelScraper(),
-    new RatehubScraper(),
-    new BigBankMortgageScraper(),
   ]
 
   for (const scraper of scrapers) {
