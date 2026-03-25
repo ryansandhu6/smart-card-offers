@@ -1,25 +1,16 @@
 {
   "crons": [
-    {
-      "path": "/api/scrape",
-      "schedule": "0 6 * * *"
-    }
+    { "path": "/api/scrape/fast", "schedule": "0 6 * * *" },
+    { "path": "/api/scrape/deep", "schedule": "0 7 * * *" }
   ],
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Origin",  "value": "https://smart-card-offers.vercel.app" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
       ]
-    }
-  ],
-  "redirects": [
-    {
-      "source": "/cards/:slug/apply",
-      "destination": "/api/track-click?slug=:slug",
-      "permanent": false
     }
   ]
 }

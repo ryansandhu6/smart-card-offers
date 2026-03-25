@@ -1,18 +1,13 @@
-// app/api/scrape/route.ts
-// POST /api/scrape — manual "run all 5 scrapers" endpoint.
+// app/api/scrape/fast/route.ts
+// POST /api/scrape/fast — fast daily scrape (~30 seconds).
+// Runs: churningcanada (SHA-gated), amex (bank-direct), td (bank-direct).
+// Triggered by Vercel cron at 06:00 UTC daily.
 // Protected by Authorization: Bearer {CRON_SECRET}.
-//
-// Daily cron is split into two shorter runs:
-//   POST /api/scrape/fast  (06:00 UTC) — churningcanada, amex, td  (~30 s)
-//   POST /api/scrape/deep  (07:00 UTC) — mintflying, princeoftravel (~10 min)
-//
-// This route runs all 5 in sequence for manual testing / one-off runs.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ChurningCanadaScraper } from '@/scrapers/churningcanada'
 import { AmexScraper } from '@/scrapers/amex'
 import { TDScraper } from '@/scrapers/td'
-import { MintFlyingScraper, PrinceOfTravelScraper } from '@/scrapers/aggregators'
 import { sendAlert } from '@/lib/alert'
 
 function checkAuth(req: NextRequest): boolean {
@@ -32,8 +27,6 @@ export async function POST(req: NextRequest) {
     new ChurningCanadaScraper(),
     new AmexScraper(),
     new TDScraper(),
-    new MintFlyingScraper(),
-    new PrinceOfTravelScraper(),
   ]
 
   for (const scraper of scrapers) {
@@ -55,21 +48,21 @@ export async function POST(req: NextRequest) {
   const total_updated = results.reduce((sum, r) => sum + ((r.records_updated as number) ?? 0), 0)
   const anyFailed = results.some(r => r.status === 'failed')
 
-  if (total_updated === 0 || anyFailed) {
+  if (anyFailed) {
     const failedList = results
       .filter(r => r.status === 'failed')
       .map(r => `  ${r.scraper}: ${r.error}`)
       .join('\n')
     await sendAlert(
-      `Scraper run issues — total_updated: ${total_updated}`,
-      `ran_at: ${ran_at}\ntotal_updated: ${total_updated}\n\nFailed scrapers:\n${failedList || '  (none failed, but 0 records updated)'}\n\nFull results:\n${JSON.stringify(results, null, 2)}`
+      `[fast scrape] Scraper failures detected`,
+      `ran_at: ${ran_at}\ntotal_updated: ${total_updated}\n\nFailed scrapers:\n${failedList}\n\nFull results:\n${JSON.stringify(results, null, 2)}`
     )
   }
 
-  return NextResponse.json({ ran_at, total_scrapers: results.length, total_updated, results })
+  return NextResponse.json({ ran_at, route: 'fast', total_scrapers: results.length, total_updated, results })
 }
 
-// Vercel cron calls GET — forward to POST handler with the cron auth header
+// Vercel cron calls GET — forward to POST
 export async function GET(req: NextRequest) {
   return POST(req)
 }

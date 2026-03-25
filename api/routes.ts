@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const cards = await getCards(filters)
-    return NextResponse.json({ cards, count: cards.length })
+    const { data: cards, total } = await getCards(filters)
+    return NextResponse.json({ cards, count: cards.length, total })
   } catch (err) {
     console.error('/api/cards error:', err)
     return NextResponse.json({ error: 'Failed to fetch cards' }, { status: 500 })

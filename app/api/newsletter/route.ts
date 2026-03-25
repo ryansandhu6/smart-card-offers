@@ -22,16 +22,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to save subscriber' }, { status: 500 })
   }
 
-  await resend.emails.send({
-    from: 'Smart Card Offers <hello@smartcardoffers.ca>',
-    to: email,
-    subject: 'Welcome to Smart Card Offers',
-    html: `
-      <h1>Welcome${first_name ? `, ${first_name}` : ''}!</h1>
-      <p>You're now subscribed to Canada's best credit card offers newsletter.</p>
-      <p>We'll send you the best welcome bonuses, limited-time offers, and points transfer tips.</p>
-    `,
-  })
+  // Subscriber is saved — attempt welcome email.
+  // A Resend failure is non-fatal: return success with email_sent: false
+  // so the frontend can show a fallback message if needed.
+  let email_sent = false
+  try {
+    const { error: emailError } = await resend.emails.send({
+      from: 'Smart Card Offers <hello@smartcardoffers.ca>',
+      to: email,
+      subject: 'Welcome to Smart Card Offers',
+      html: `
+        <h1>Welcome${first_name ? `, ${first_name}` : ''}!</h1>
+        <p>You're now subscribed to Canada's best credit card offers newsletter.</p>
+        <p>We'll send you the best welcome bonuses, limited-time offers, and points transfer tips.</p>
+      `,
+    })
+    if (emailError) {
+      console.error('[newsletter] Resend error:', emailError)
+    } else {
+      email_sent = true
+    }
+  } catch (err) {
+    console.error('[newsletter] Failed to send welcome email:', err)
+  }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, email_sent })
 }

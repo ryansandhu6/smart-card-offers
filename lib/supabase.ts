@@ -40,7 +40,7 @@ export async function getCards(filters?: {
       .select('id')
       .eq('slug', filters.issuer_slug)
       .maybeSingle()
-    if (!issuer) return []   // unknown issuer slug → empty result set
+    if (!issuer) return { data: [], total: 0 }   // unknown issuer slug → empty result set
     issuer_id = issuer.id
   }
 
@@ -58,7 +58,7 @@ export async function getCards(filters?: {
         is_limited_time, expires_at, is_verified,
         source_priority, last_seen_at, confidence_score
       )
-    `)
+    `, { count: 'exact' })
     .eq('is_active', true)
     .eq('card_offers.is_active', true)
     .order('is_featured', { ascending: false })
@@ -70,9 +70,9 @@ export async function getCards(filters?: {
   if (filters?.tier)         query = query.eq('tier', filters.tier)
   if (filters?.tags?.length) query = query.overlaps('tags', filters.tags)
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw error
-  return data
+  return { data: data ?? [], total: count ?? 0 }
 }
 
 export async function getActiveOffers(limitedTimeOnly = false, page = 1, limit = 20) {
