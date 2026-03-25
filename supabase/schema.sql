@@ -265,7 +265,15 @@ INSERT INTO issuers (name, slug, website) VALUES
   ('PC Financial',     'pc-financial', 'https://www.pcfinancial.ca/en/credit-cards'),
   ('Desjardins',       'desjardins',   'https://www.desjardins.com/ca/personal/accounts-services/credit-cards'),
   ('MBNA',             'mbna',         'https://www.mbna.ca'),
-  ('Rogers Bank',      'rogers-bank',  'https://www.rogersbank.com');
+  ('Rogers Bank',      'rogers-bank',  'https://www.rogersbank.com'),
+  -- Added 2026-03-24: additional issuers from Prince of Travel scraper
+  ('Brim Financial',   'brim',         'https://www.brimfinancial.com'),
+  ('Neo Financial',    'neo-financial','https://www.neo.ca'),
+  ('Canadian Tire Bank','canadian-tire','https://www.triangle.ca'),
+  ('Home Trust',       'home-trust',   'https://www.hometrust.ca/credit-cards'),
+  ('Laurentian Bank',  'laurentian-bank','https://www.laurentianbank.ca'),
+  ('Meridian',         'meridian',     'https://www.meridiancu.ca/personal/banking/credit-cards'),
+  ('Simplii Financial','simplii',      'https://www.simplii.com/en/credit-cards.html');
 
 -- -----------------------------------------------
 -- SEED POINTS VALUATIONS

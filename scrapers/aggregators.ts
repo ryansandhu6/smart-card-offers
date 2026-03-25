@@ -22,14 +22,17 @@ const ISSUER_MAP: Record<string, string> = {
   'amex': 'amex',
   'td bank': 'td',
   'td ': 'td',
+  'td®': 'td',
   '"td"': 'td',
   'scotiabank': 'scotiabank',
   'bmo': 'bmo',
   'royal bank': 'rbc',
   ' rbc': 'rbc',
   'cibc': 'cibc',
+  'air france': 'cibc',     // Air France KLM World Elite MC issued by CIBC
   'national bank': 'national-bank',
   'tangerine': 'tangerine',
+  'simplii': 'simplii',
   'pc financial': 'pc-financial',
   'desjardins': 'desjardins',
   'westjet': 'rbc',
@@ -37,6 +40,17 @@ const ISSUER_MAP: Record<string, string> = {
   'rogers bank': 'rogers-bank',
   'rogers red': 'rogers-bank',
   ' rogers': 'rogers-bank',
+  'hsbc': 'hsbc',
+  'brim': 'brim',
+  ' neo ': 'neo-financial',
+  'neo world': 'neo-financial',
+  'cathay world': 'neo-financial',  // Cathay World Elite MC – Powered by Neo
+  'canadian tire': 'canadian-tire',
+  'triangle': 'canadian-tire',
+  'home trust': 'home-trust',
+  'laurentian': 'laurentian-bank',
+  'meridian': 'meridian',
+  'aeroplan® credit card': 'td',  // standalone Aeroplan CC issued by TD (no bank prefix)
 }
 
 function resolveIssuer(raw: string): string {
@@ -52,6 +66,9 @@ const KNOWN_ISSUER_SLUGS = new Set([
   'amex', 'td', 'scotiabank', 'bmo', 'rbc', 'cibc',
   'national-bank', 'hsbc', 'tangerine', 'pc-financial', 'desjardins',
   'mbna', 'rogers-bank',
+  // Added 2026-03-24 for Prince of Travel coverage
+  'brim', 'neo-financial', 'canadian-tire', 'home-trust',
+  'laurentian-bank', 'meridian', 'simplii',
 ])
 
 const OFFER_KW = /points?|cash\s*back|bonus|earn|miles?|reward|Scene\+|Aeroplan|Avion|WestJet|AIR\s*MILES/i
