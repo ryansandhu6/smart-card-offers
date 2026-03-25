@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-03-24
+> Last updated: 2026-03-24 (scraper simplification — 5 active scrapers, ~202 offers)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -28,12 +28,11 @@
 Smart Card Offers aggregates Canadian credit card welcome bonuses, limited-time offers, and mortgage rates. The goal is to be the most up-to-date, trust-ranked source for Canadian card offers.
 
 **What it does:**
-- Scrapes 11 data sources (bank websites, aggregator sites, community GitHub repo)
+- Scrapes 5 data sources (bank websites, aggregator sites, community GitHub repo)
 - Stores offers in Supabase with a trust/priority system — bank-direct data wins over aggregator data
 - Exposes a clean JSON API consumed by the Next.js frontend
 - Tracks referral clicks for affiliate revenue attribution
 - Sends welcome emails to newsletter subscribers via Resend
-- Scrapes mortgage rates from Ratehub and major banks
 
 **Target audience:** Canadian credit card enthusiasts, points collectors, and everyday users looking for the best signup bonuses.
 
@@ -74,13 +73,13 @@ smart-card-offers/
 │   ├── supabase.ts                 DB clients + query helpers
 │   └── scraper-base.ts             BaseScraper + BaseMortgageScraper
 ├── scrapers/
-│   ├── amex.ts                     American Express scraper
-│   ├── banks.ts                    Scotiabank, BMO, RBC, CIBC
-│   ├── td.ts                       TD Bank scraper
-│   ├── aggregators.ts              MintFlying, RatehubCards
-│   ├── churningcanada.ts           r/churningcanada GitHub README
-│   ├── mortgage-rates.ts           Ratehub, BigBank mortgage scrapers
-│   └── playwright-scraper.ts       NationalBank, Tangerine (JS-rendered)
+│   ├── amex.ts                     American Express scraper (active)
+│   ├── td.ts                       TD Bank scraper (active)
+│   ├── churningcanada.ts           r/churningcanada GitHub README (active)
+│   ├── aggregators.ts              MintFlying, PrinceOfTravel (active)
+│   ├── banks.ts                    Scotiabank, BMO, RBC, CIBC (inactive — kept for future use)
+│   ├── mortgage-rates.ts           Ratehub, BigBank mortgage scrapers (inactive — kept for future use)
+│   └── playwright-scraper.ts       PlaywrightScraper base class (inactive scrapers removed)
 ├── scripts/
 │   ├── run-scrapers.ts             CLI entry point for manual scrapes
 │   ├── seed-cards.ts               Seed credit_cards + issuers
@@ -133,7 +132,7 @@ Returns a paginated list of active credit cards with their issuer details and cu
 
 | Param | Type | Default | Description |
 |---|---|---|---|
-| `issuer` | string | — | Filter by issuer slug. Valid values: `amex`, `td`, `scotiabank`, `bmo`, `rbc`, `cibc`, `national-bank`, `hsbc`, `tangerine`, `pc-financial`, `desjardins`, `mbna`, `rogers-bank`. Unknown slug returns `[]`. |
+| `issuer` | string | — | Filter by issuer slug. Valid values: `amex`, `td`, `scotiabank`, `bmo`, `rbc`, `cibc`, `national-bank`, `hsbc`, `tangerine`, `pc-financial`, `desjardins`, `mbna`, `rogers-bank`, `brim`, `neo-financial`, `canadian-tire`, `home-trust`, `laurentian-bank`, `meridian`, `simplii`. Unknown slug returns `[]`. |
 | `tier` | string | — | Filter by card tier: `no-fee`, `entry`, `mid`, `premium`, `super-premium` |
 | `rewards_type` | string | — | Filter by rewards type: `points`, `cashback`, `hybrid` |
 | `tags` | string | — | Comma-separated tags to match (any match). e.g. `travel,aeroplan` |
@@ -464,11 +463,14 @@ Runs all scrapers in sequence. Protected endpoint — requires `Authorization: B
 ```json
 {
   "ran_at": "2026-03-24T06:00:00.000Z",
-  "total_scrapers": 11,
-  "total_updated": 187,
+  "total_scrapers": 5,
+  "total_updated": 202,
   "results": [
-    { "scraper": "churningcanada", "status": "success", "records_found": 33, "records_updated": 0, "duration_ms": 139 },
-    { "scraper": "amex",           "status": "success", "records_found": 8,  "records_updated": 8,  "duration_ms": 3200 }
+    { "scraper": "churningcanada",  "status": "success", "records_found": 33, "records_updated": 0,  "duration_ms": 139 },
+    { "scraper": "amex",            "status": "success", "records_found": 6,  "records_updated": 6,  "duration_ms": 3200 },
+    { "scraper": "td",              "status": "success", "records_found": 1,  "records_updated": 1,  "duration_ms": 1800 },
+    { "scraper": "mintflying",      "status": "success", "records_found": 65, "records_updated": 65, "duration_ms": 5400 },
+    { "scraper": "princeoftravel",  "status": "success", "records_found": 97, "records_updated": 97, "duration_ms": 485000 }
   ]
 }
 ```
@@ -477,16 +479,10 @@ Runs all scrapers in sequence. Protected endpoint — requires `Authorization: B
 
 **Scraper execution order:**
 1. churningcanada (priority 1, SHA-gated)
-2. amex
-3. td
-4. scotiabank
-5. bmo
-6. rbc
-7. cibc
-8. ratehub-cards
-9. mintflying
-10. ratehub (mortgage)
-11. big-bank-mortgage
+2. amex (priority 1, bank-direct)
+3. td (priority 1, bank-direct)
+4. mintflying (priority 2, aggregator)
+5. princeoftravel (priority 2, aggregator — ~8 min, visits 102 card pages)
 
 ---
 
@@ -547,7 +543,7 @@ Full schema: `supabase/schema.sql` — this is the single source of truth. Run i
 
 ### `issuers`
 
-Seeded at init. 13 Canadian card issuers.
+Seeded at init. 20 Canadian card issuers.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -557,7 +553,7 @@ Seeded at init. 13 Canadian card issuers.
 | `logo_url` | TEXT | Issuer logo |
 | `website` | TEXT | Issuer's credit card listing URL |
 
-**Seeded slugs:** `amex`, `td`, `scotiabank`, `bmo`, `cibc`, `rbc`, `national-bank`, `hsbc`, `tangerine`, `pc-financial`, `desjardins`, `mbna`, `rogers-bank`
+**Seeded slugs:** `amex`, `td`, `scotiabank`, `bmo`, `cibc`, `rbc`, `national-bank`, `hsbc`, `tangerine`, `pc-financial`, `desjardins`, `mbna`, `rogers-bank`, `brim`, `neo-financial`, `canadian-tire`, `home-trust`, `laurentian-bank`, `meridian`, `simplii`
 
 ---
 
@@ -749,8 +745,8 @@ Offers have a `source_priority` (1–3) that determines whose data wins on confl
 
 | Priority | Source Type | Example |
 |---|---|---|
-| **1** | Bank-direct or community-verified | AmexScraper, ChurningCanadaScraper |
-| **2** | Third-party aggregator | MintFlyingScraper, RatehubCardsScraper |
+| **1** | Bank-direct or community-verified | AmexScraper, TDScraper, ChurningCanadaScraper |
+| **2** | Third-party aggregator | MintFlyingScraper, PrinceOfTravelScraper |
 | **3** | Hardcoded fallback | `getKnownOffer()` in bank scrapers |
 
 **Rule:** Lower number = higher trust. A priority-2 aggregator offer will never overwrite a priority-1 bank-direct offer with the same headline. It will only refresh `last_seen_at`.
@@ -778,21 +774,27 @@ After every scraper run, `markStaleOffersInactive()` sets `is_active = false` on
 
 ### Scraper Inventory
 
-| Scraper | File | Priority | Verified | Notes |
-|---|---|---|---|---|
-| `churningcanada` | `scrapers/churningcanada.ts` | 1 | ✅ | SHA-gated GitHub README parser |
-| `amex` | `scrapers/amex.ts` | 1 | ✅ | Fetches Amex CA cards page + known fallbacks |
-| `td` | `scrapers/td.ts` | 1 | ✅ | TD credit cards listing page |
-| `scotiabank` | `scrapers/banks.ts` | 1 | ✅ | |
-| `bmo` | `scrapers/banks.ts` | 1 | ✅ | |
-| `rbc` | `scrapers/banks.ts` | 1 | ✅ | |
-| `cibc` | `scrapers/banks.ts` | 1 | ✅ | |
-| `national-bank` | `scrapers/playwright-scraper.ts` | 1 | ✅ | Playwright (JS-rendered) |
-| `tangerine` | `scrapers/playwright-scraper.ts` | 1 | ✅ | Playwright (JS-rendered) |
-| `ratehub-cards` | `scrapers/aggregators.ts` | 2 | ❌ | Next.js SPA — tries `__NEXT_DATA__`, falls back to text scan |
-| `mintflying` | `scrapers/aggregators.ts` | 2 | ❌ | JSON-LD → RSC payload → keyword scan |
-| `ratehub` | `scrapers/mortgage-rates.ts` | — | — | Mortgage rates from Ratehub |
-| `big-bank-mortgage` | `scrapers/mortgage-rates.ts` | — | — | Mortgage rates from bank sites |
+**Active scrapers (5):**
+
+| Scraper | File | Priority | Verified | Offers | Notes |
+|---|---|---|---|---|---|
+| `churningcanada` | `scrapers/churningcanada.ts` | 1 | ✅ | ~33 | SHA-gated GitHub README parser |
+| `amex` | `scrapers/amex.ts` | 1 | ✅ | ~6 | Fetches Amex CA cards page + known fallbacks |
+| `td` | `scrapers/td.ts` | 1 | ✅ | ~1 | TD credit cards listing page |
+| `mintflying` | `scrapers/aggregators.ts` | 2 | ❌ | ~65 | JSON-LD → RSC payload → keyword scan |
+| `princeoftravel` | `scrapers/aggregators.ts` | 2 | ❌ | ~97 | Visits all 102 card pages — also saves images + earn rates |
+
+**Total: ~202 offers across 20 issuers.**
+
+Prince of Travel is the **primary source for card images and earn-rate multipliers** — it visits every individual card page and writes `image_url` and `earn_rate_multipliers` back to `credit_cards` when those fields are currently NULL.
+
+**Inactive scraper files (kept for future use):**
+
+| File | Contents |
+|---|---|
+| `scrapers/banks.ts` | Scotiabank, BMO, RBC, CIBC scrapers |
+| `scrapers/mortgage-rates.ts` | Ratehub + BigBank mortgage rate scrapers |
+| `scrapers/playwright-scraper.ts` | `PlaywrightScraper` base class (NationalBank + Tangerine scrapers removed) |
 
 ### SHA-Gating (ChurningCanada)
 
@@ -822,7 +824,7 @@ This keeps Vercel function costs low since the README changes infrequently.
    }
    ```
 2. Add the issuer to `issuers` table (or add to the `INSERT INTO issuers` block in `schema.sql`)
-3. Register in `scripts/run-scrapers.ts` under `CARD_SCRAPERS`
+3. Register in `scripts/run-scrapers.ts` — add to the `SCRAPERS` map and import at the top
 4. Add `scrape:yourbank` to `package.json` scripts
 5. Register in `app/api/scrape/route.ts` scrapers array
 
@@ -957,6 +959,10 @@ pointsToCAD(60000, 'Scene+', 'mid')  // "$600"
 
 Card images are stored at `/public/images/cards/{slug}.png` (or `.jpg`, `.webp`). They are served as static assets.
 
+### Primary image source: Prince of Travel
+
+The `princeoftravel` scraper visits every card page on princeoftravel.com and writes the scraped `image_url` back to `credit_cards.image_url` **when the field is currently NULL**. After running `npm run scrape:princeoftravel`, most cards will have an image URL pointing to the PoT CDN. Run `npm run download-images` to pull those URLs down to local `/public/images/cards/`.
+
 ### Fallback handling
 
 Always use a placeholder when `image_url` is null or the file might not exist:
@@ -1000,18 +1006,11 @@ npm run scrape
 ### Run a single scraper
 
 ```bash
-npm run scrape:amex
-npm run scrape:td
-npm run scrape:scotiabank
-npm run scrape:bmo
-npm run scrape:rbc
-npm run scrape:cibc
-npm run scrape:national-bank
-npm run scrape:tangerine
-npm run scrape:mintflying
-npm run scrape:ratehub-cards
-npm run scrape:churningcanada
-npm run scrape:mortgage
+npm run scrape:amex           # American Express (bank-direct, priority 1)
+npm run scrape:td             # TD Bank (bank-direct, priority 1)
+npm run scrape:churningcanada # r/churningcanada GitHub README (SHA-gated, ~33 offers)
+npm run scrape:mintflying     # MintFlying aggregator (~65 offers)
+npm run scrape:princeoftravel # Prince of Travel (~97 offers, images, earn rates — ~8 min)
 ```
 
 ### Seed the database (new setup)
@@ -1043,7 +1042,7 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 | Admin dashboard | High | View scrape health, edit cards/offers, manage featured |
 | Card comparison endpoint | Medium | Compare 2–3 cards side by side |
 | Offer history / price tracking | Low | Track how offers change over time |
-| Playwright scrapers in prod | High | NationalBank and Tangerine use Playwright, which requires `@playwright/test` + browser binaries — incompatible with Vercel serverless without a custom Docker layer or external service |
+| Re-enable bank scrapers | Medium | Scotiabank, BMO, RBC, CIBC scrapers exist in `banks.ts` but are not registered — add back to `run-scrapers.ts` and `route.ts` when needed |
 | Search endpoint | Medium | Full-text search across card names and offer headlines |
 | Pagination total count | Medium | `/api/cards` and `/api/offers` return `count` as page count, not total rows. Add `?count=exact` to Supabase queries for true total. |
 
@@ -1054,8 +1053,7 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 | Aggregator card names don't always match seeded names | Stub cards created | `ensureCard()` fuzzy matching handles most; seed data enriches stubs over time |
 | `spend_timeframe_days` often null for aggregator offers | Missing in display | Fall back to showing just the spend amount without timeframe |
 | `cashback_value` is a percentage, not a dollar amount | Calculation errors | See [Section 8](#8-data-quality-notes) |
-| Some bank scrapers return 0 when site layout changes | Stale data after 7 days | Monitor `/api/scrape-logs`; known fallback offers in scraper code act as backup |
-| Playwright scrapers not running in production | National Bank and Tangerine missing | Only runs via manual `npm run scrape:national-bank` locally |
+| Prince of Travel scraper takes ~8 min | Long Vercel cron runtime | PoT visits 102 pages × 2s delay; the daily cron has a 10-min timeout — acceptable, but monitor |
 | `blog_posts.content_mdx` not exposed via API | Can't render blog posts | Query Supabase directly with the public anon key for individual post content |
 
 ---
