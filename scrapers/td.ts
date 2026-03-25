@@ -8,7 +8,7 @@ import type { ScrapedOffer } from '../types'
 export class TDScraper extends BaseScraper {
   name = 'td-canada'
   issuerSlug = 'td'
-  protected sourcePriority = 1
+  protected sourcePriority = 2   // bank-direct, but PoT (priority 1) has richer data
   protected isVerified = true
 
   private readonly BASE_URL = 'https://www.td.com'

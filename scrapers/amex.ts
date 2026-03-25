@@ -9,7 +9,7 @@ import type { ScrapedOffer } from '../types'
 export class AmexScraper extends BaseScraper {
   name = 'amex-canada'
   issuerSlug = 'amex'
-  protected sourcePriority = 1
+  protected sourcePriority = 2   // bank-direct, but PoT (priority 1) has richer data
   protected isVerified = true
 
   // Known Amex Canada cards with their offer pages

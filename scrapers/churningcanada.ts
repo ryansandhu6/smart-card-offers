@@ -172,7 +172,7 @@ export class ChurningCanadaScraper extends BaseScraper {
   name       = SCRAPER_NAME
   issuerSlug = 'amex'  // unused — each offer has its own issuer_slug
 
-  // Community-maintained repo: treat as bank-direct quality (priority 1, verified)
+  // Community-maintained, manually curated — highest trust tier (priority 1)
   protected sourcePriority = 1
   protected isVerified     = true
 

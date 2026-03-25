@@ -71,16 +71,20 @@ export abstract class BaseScraper {
   abstract issuerSlug: string
 
   /**
-   * Source trust level. Override in bank-direct scrapers.
-   *   1 = bank-direct (most trusted)
-   *   2 = aggregator
-   *   3 = hardcoded / manual
+   * Source trust level — lower number = higher trust.
+   *   1 = richest / curated  (PrinceOfTravelScraper, ChurningCanadaScraper)
+   *   2 = bank-direct        (AmexScraper, TDScraper)
+   *   3 = aggregator         (MintFlyingScraper)
+   *
+   * A priority-2 source will NEVER overwrite a priority-1 row's content.
+   * A priority-3 source will NEVER overwrite a priority-1 or priority-2 row's content.
+   * In both cases only `last_seen_at` and `confidence_score` are refreshed.
    */
-  protected sourcePriority = 2
+  protected sourcePriority = 3   // default: aggregator tier; override in subclasses
 
   /**
-   * Whether offers from this scraper count as manually verified.
-   * Override to true in bank-direct scrapers.
+   * Whether offers from this scraper count as verified.
+   * Set to true for curated (PoT, churningcanada) and bank-direct scrapers.
    */
   protected isVerified = false
 
@@ -192,16 +196,21 @@ export abstract class BaseScraper {
       .maybeSingle()
 
     if (existing) {
+      // Priority guard: lower number = higher trust.
+      // If the stored row is already from an equal-or-higher-trust source
+      // (existing.source_priority ≤ incomingPriority), never overwrite the offer
+      // content — only refresh the heartbeat so the offer stays active.
+      // Example: a PoT (1) offer must never be overwritten by an amex (2) or
+      // mintflying (3) run, even if the headline text matches.
       if ((existing.source_priority ?? 99) <= incomingPriority) {
-        // Existing row has equal or higher trust — don't overwrite content,
-        // just refresh the heartbeat and recalculate confidence.
+        // Existing row has equal or higher trust — heartbeat refresh only.
         const { error } = await supabaseAdmin
           .from('card_offers')
           .update({ last_seen_at: now, confidence_score: confidence, is_active: true })
           .eq('id', existing.id)
         if (error) throw new Error(`last_seen_at update failed: ${error.message}`)
       } else {
-        // Incoming source has higher trust — full overwrite
+        // Incoming source has strictly higher trust (lower number) — full overwrite.
         const { error } = await supabaseAdmin
           .from('card_offers')
           .update({

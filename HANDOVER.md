@@ -478,11 +478,11 @@ Runs all scrapers in sequence. Protected endpoint — requires `Authorization: B
 **Returns 401** if `CRON_SECRET` is missing or the Authorization header doesn't match.
 
 **Scraper execution order:**
-1. churningcanada (priority 1, SHA-gated)
-2. amex (priority 1, bank-direct)
-3. td (priority 1, bank-direct)
-4. mintflying (priority 2, aggregator)
-5. princeoftravel (priority 2, aggregator — ~8 min, visits 102 card pages)
+1. churningcanada (priority 1, SHA-gated community data)
+2. amex (priority 2, bank-direct)
+3. td (priority 2, bank-direct)
+4. mintflying (priority 3, aggregator)
+5. princeoftravel (priority 1, curated — ~8 min, visits 102 card pages, overwrites lower-priority rows)
 
 ---
 
@@ -741,15 +741,20 @@ Each scraper extends `BaseScraper` (card scrapers) or `BaseMortgageScraper` (mor
 
 ### Trust / Priority System
 
-Offers have a `source_priority` (1–3) that determines whose data wins on conflicts:
+Offers have a `source_priority` (1–3) that determines whose data wins on conflicts. **Lower number = higher trust.**
 
-| Priority | Source Type | Example |
-|---|---|---|
-| **1** | Bank-direct or community-verified | AmexScraper, TDScraper, ChurningCanadaScraper |
-| **2** | Third-party aggregator | MintFlyingScraper, PrinceOfTravelScraper |
-| **3** | Hardcoded fallback | `getKnownOffer()` in bank scrapers |
+| Priority | Meaning | Scrapers | Why |
+|---|---|---|---|
+| **1** | Richest / curated | `princeoftravel`, `churningcanada` | PoT visits every card page individually — it captures images, earn-rate multipliers, expiry dates, and full offer breakdowns. ChurningCanada is manually maintained by the community. Neither can be improved by overwriting with shallower data. |
+| **2** | Bank-direct | `amex`, `td` | Straight from the issuer, so offer amounts are accurate. But the data is shallow (no images, no earn rates), so it should not overwrite PoT's richer rows. |
+| **3** | Aggregator | `mintflying` | Third-party listings that aggregate offers from many sources — lower confidence. Never overwrites priority-1 or priority-2 content. |
 
-**Rule:** Lower number = higher trust. A priority-2 aggregator offer will never overwrite a priority-1 bank-direct offer with the same headline. It will only refresh `last_seen_at`.
+**Rule:** A higher-priority (lower number) source will **always** perform a full overwrite when it encounters an existing lower-priority row. A lower-priority source will only refresh `last_seen_at` and `confidence_score` — it never touches the offer content.
+
+**Example flow:**
+1. `mintflying` (3) runs first → inserts "80,000 Amex MR points" at priority 3
+2. `princeoftravel` (1) runs next → same headline exists at priority 3 → `3 > 1` → **full overwrite** with richer PoT data
+3. `amex` (2) runs → same headline now exists at priority 1 → `1 ≤ 2` → **heartbeat only**, amex data is discarded
 
 ### Confidence Score (0–100)
 
@@ -778,15 +783,15 @@ After every scraper run, `markStaleOffersInactive()` sets `is_active = false` on
 
 | Scraper | File | Priority | Verified | Offers | Notes |
 |---|---|---|---|---|---|
-| `churningcanada` | `scrapers/churningcanada.ts` | 1 | ✅ | ~33 | SHA-gated GitHub README parser |
-| `amex` | `scrapers/amex.ts` | 1 | ✅ | ~6 | Fetches Amex CA cards page + known fallbacks |
-| `td` | `scrapers/td.ts` | 1 | ✅ | ~1 | TD credit cards listing page |
-| `mintflying` | `scrapers/aggregators.ts` | 2 | ❌ | ~65 | JSON-LD → RSC payload → keyword scan |
-| `princeoftravel` | `scrapers/aggregators.ts` | 2 | ❌ | ~97 | Visits all 102 card pages — also saves images + earn rates |
+| `princeoftravel` | `scrapers/aggregators.ts` | **1** | ✅ | ~97 | Visits all 102 card pages — saves images, earn rates, expiry dates |
+| `churningcanada` | `scrapers/churningcanada.ts` | **1** | ✅ | ~33 | SHA-gated GitHub README parser |
+| `amex` | `scrapers/amex.ts` | 2 | ✅ | ~6 | Bank-direct — accurate offer amounts, shallow data |
+| `td` | `scrapers/td.ts` | 2 | ✅ | ~1 | Bank-direct — accurate offer amounts, shallow data |
+| `mintflying` | `scrapers/aggregators.ts` | 3 | ❌ | ~65 | Aggregator — JSON-LD → RSC payload → keyword scan |
 
 **Total: ~202 offers across 20 issuers.**
 
-Prince of Travel is the **primary source for card images and earn-rate multipliers** — it visits every individual card page and writes `image_url` and `earn_rate_multipliers` back to `credit_cards` when those fields are currently NULL.
+Prince of Travel is **priority 1 and the primary source for card images and earn-rate multipliers** — it visits every individual card page and writes `image_url` and `earn_rate_multipliers` back to `credit_cards` when those fields are currently NULL. Its richer offer rows can never be overwritten by bank-direct (2) or aggregator (3) scrapers.
 
 **Inactive scraper files (kept for future use):**
 
@@ -886,11 +891,11 @@ const badge =
 
 ### `source_priority` Meaning
 
-| Value | Meaning |
-|---|---|
-| `1` | Bank website or community-curated (most reliable) |
-| `2` | Third-party aggregator |
-| `3` | Hardcoded fallback in scraper code |
+| Value | Meaning | Scrapers |
+|---|---|---|
+| `1` | Richest / curated (most reliable) | `princeoftravel`, `churningcanada` |
+| `2` | Bank-direct | `amex`, `td` |
+| `3` | Third-party aggregator | `mintflying` |
 
 Show a small disclaimer like "Source: Third-party aggregator" when `source_priority = 2`.
 
@@ -1006,11 +1011,11 @@ npm run scrape
 ### Run a single scraper
 
 ```bash
-npm run scrape:amex           # American Express (bank-direct, priority 1)
-npm run scrape:td             # TD Bank (bank-direct, priority 1)
-npm run scrape:churningcanada # r/churningcanada GitHub README (SHA-gated, ~33 offers)
-npm run scrape:mintflying     # MintFlying aggregator (~65 offers)
-npm run scrape:princeoftravel # Prince of Travel (~97 offers, images, earn rates — ~8 min)
+npm run scrape:princeoftravel # Prince of Travel — priority 1, ~97 offers, images, earn rates (~8 min)
+npm run scrape:churningcanada # r/churningcanada — priority 1, SHA-gated, ~33 offers
+npm run scrape:amex           # American Express — priority 2, bank-direct, ~6 offers
+npm run scrape:td             # TD Bank — priority 2, bank-direct, ~1 offer
+npm run scrape:mintflying     # MintFlying — priority 3, aggregator, ~65 offers
 ```
 
 ### Seed the database (new setup)
