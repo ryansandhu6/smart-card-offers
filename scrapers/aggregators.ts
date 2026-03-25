@@ -406,122 +406,284 @@ export class RatehubCardsScraper extends BaseScraper {
 // PrinceOfTravel
 // robots.txt: Allow: / (blocks /account/ /api/ /dev/ only)
 //
-// Scrapes /best-credit-cards/overall/ — the site's top-10 overall
-// Canadian credit card picks with full offer details.
+// Strategy:
+//   1. Fetch /credit-cards/ listing page, collect all individual card URLs
+//      (links matching /credit-cards/{slug}/).
+//   2. Visit each card page with a 2-second polite delay.
+//   3. On each card page, extract:
+//        • card name (h1 or first prominent heading)
+//        • card image URL (first prominent img in main content)
+//        • apply / referral link (first external "Apply" anchor)
+//        • welcome offer headline + bullet breakdown
+//        • expiry date, points value, spend requirement
+//        • earn-rate multipliers (e.g. 3x dining, 2x groceries)
+//   4. Offers are written to card_offers; images and earn_rate_multipliers
+//      are written to credit_cards (only when currently NULL).
 //
-// HTML structure (server-rendered Next.js App Router):
-//   Each card renders inside a <section>. The welcome bonus label
-//   "Welcome bonus" is a <span> and its VALUE is the immediately
-//   following sibling <span>. Cards appear TWICE per section
-//   (once mobile layout, once desktop layout) — deduplicated by
-//   card name via a Set.
-//   Card name: <a href="/credit-cards/..."><span>Card Name</span></a>
-//
-// Fallback: scanPageOffers text scan if the HTML structure changes.
+// HTML note: server-rendered Next.js App Router.  Content is fully
+// present in the raw HTML response — no headless browser needed.
 // -----------------------------------------------
 export class PrinceOfTravelScraper extends BaseScraper {
   name = 'princeoftravel'
   issuerSlug = 'aggregator'
-  // sourcePriority = 2, isVerified = false — inherited from BaseScraper defaults
 
-  private readonly SOURCE_URL = 'https://princeoftravel.com/best-credit-cards/overall/'
+  private readonly BASE_URL  = 'https://princeoftravel.com'
+  private readonly LISTING_URL = 'https://princeoftravel.com/credit-cards/'
+
+  // ── Non-card paths to exclude when collecting card URLs ──────────────────
+  private readonly SKIP_SLUGS = new Set([
+    'travel', 'cash-back', 'cashback', 'business', 'hotel', 'airline',
+    'no-fee', 'no-annual-fee', 'premium', 'best', 'compare', 'rewards',
+    'points', 'miles', 'featured', 'all', 'reviews', 'news', 'guides',
+  ])
 
   async scrape(): Promise<ScrapedOffer[]> {
-    const res = await this.fetchWithTimeout(this.SOURCE_URL, {
-      headers: { 'User-Agent': 'Mozilla/5.0 Chrome/120', 'Accept-Language': 'en-CA' },
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    // Step 1 — collect card URLs from the listing page
+    const cardUrls = await this.fetchCardUrls()
+    console.log(`[princeoftravel] Found ${cardUrls.length} card URLs on listing page`)
 
-    const html = await res.text()
-    const $ = cheerio.load(html)
     const offers: ScrapedOffer[] = []
-    // Deduplicate: each card appears twice in the HTML (mobile + desktop layout)
-    const seen = new Set<string>()
 
-    // Primary strategy: walk every "Welcome bonus" label span in the page.
-    // The label and its value are siblings inside a flex container:
-    //   <div class="flex items-center gap-3">
-    //     <span>Welcome bonus</span>           ← label
-    //     <span>110,000 Membership Rewards…</span>  ← value
-    //   </div>
-    $('span').each((_, labelEl) => {
-      if (!/^welcome bonus$/i.test($(labelEl).text().trim())) return
-
-      // Value is the immediately following sibling <span>
-      const bonusHeadline = $(labelEl).next('span').text().replace(/\s+/g, ' ').trim()
-      if (!bonusHeadline) return
-
-      // Card name: nearest <a href="/credit-cards/..."><span> ancestor group
-      const $container = $(labelEl).closest('section, div[class*="rounded-xl"], div[class*="not-prose"]')
-      let cardName = ''
-      let applyUrl: string | undefined
-      $container.find('a[href*="/credit-cards/"]').each((_, a) => {
-        const name = $(a).children('span').first().text().trim()
-        if (name && !cardName) {
-          cardName = name
-          const href = $(a).attr('href') ?? ''
-          applyUrl = href.startsWith('http') ? href : `https://princeoftravel.com${href}`
-        }
-      })
-
-      if (!cardName || seen.has(cardName)) return
-
-      // Spend details from the first breakdown bullet below the bonus value
-      // e.g. "• Earn 80,000 points upon spending $10,000 in the first 3 months"
-      const $bonusBlock = $(labelEl).closest('div[class*="border"]')
-      const firstBullet = $bonusBlock.next().find('p').first()
-        .text().replace(/^[•·]\s*/, '').replace(/\s+/g, ' ').trim()
-
-      // Build richer headline if spend info is in the bullet but not in bonusHeadline
-      let headline = bonusHeadline
-      if (firstBullet && !bonusHeadline.includes('$')) {
-        const spendMatch = firstBullet.match(/spending\s+(\$[\d,]+)\s+in\s+the\s+first\s+(\d+)\s+(month|day)/i)
-        if (spendMatch) {
-          headline = `${bonusHeadline} after ${spendMatch[1]} spend in ${spendMatch[2]} ${spendMatch[3]}s`
-        }
+    // Step 2 — scrape each individual card page
+    for (let i = 0; i < cardUrls.length; i++) {
+      const url = cardUrls[i]
+      try {
+        const offer = await this.scrapeCardPage(url)
+        if (offer) offers.push(offer)
+      } catch (err) {
+        console.warn(`[princeoftravel] Failed to scrape ${url}: ${err}`)
       }
-
-      const issuer_slug = resolveIssuer(cardName)
-      if (!KNOWN_ISSUER_SLUGS.has(issuer_slug)) return
-
-      seen.add(cardName)
-
-      const spendInfo = this.parseSpend(firstBullet || headline)
-      offers.push({
-        card_name: cardName,
-        issuer_slug,
-        offer_type: 'welcome_bonus',
-        headline: headline.slice(0, 250),
-        points_value: this.parsePoints(bonusHeadline),
-        spend_requirement: spendInfo?.amount,
-        spend_timeframe_days: spendInfo?.days,
-        is_limited_time: false,
-        source_url: this.SOURCE_URL,
-        apply_url: applyUrl,
-      })
-    })
-
-    // Fallback: full-page text scan if layout changes break the label selector
-    if (offers.length === 0) {
-      for (const t of scanPageOffers($)) {
-        const issuer_slug = resolveIssuer(t)
-        if (!KNOWN_ISSUER_SLUGS.has(issuer_slug)) continue
-        offers.push({
-          card_name: inferCardName(t),
-          issuer_slug,
-          offer_type: 'welcome_bonus',
-          headline: t.slice(0, 250),
-          points_value: this.parsePoints(t),
-          spend_requirement: this.parseSpend(t)?.amount,
-          spend_timeframe_days: this.parseSpend(t)?.days,
-          is_limited_time: /limited time|expires/i.test(t),
-          source_url: this.SOURCE_URL,
-        })
+      // 2-second polite delay between card page requests
+      if (i < cardUrls.length - 1) {
+        await new Promise(r => setTimeout(r, 2_000))
       }
     }
 
     const filtered = offers.filter(o => KNOWN_ISSUER_SLUGS.has(o.issuer_slug))
     console.log(`[princeoftravel] found ${offers.length} offers, ${filtered.length} with known issuers`)
     return filtered
+  }
+
+  // ── Listing page: collect individual card page URLs ───────────────────────
+  private async fetchCardUrls(): Promise<string[]> {
+    const res = await this.fetchWithTimeout(this.LISTING_URL)
+    if (!res.ok) throw new Error(`HTTP ${res.status} on listing page`)
+
+    const html = await res.text()
+    const $ = cheerio.load(html)
+    const urls = new Set<string>()
+
+    // Strategy 1: parse HTML anchor hrefs
+    $('a[href]').each((_, el) => {
+      const href = $(el).attr('href') ?? ''
+      const m = href.match(/^\/credit-cards\/([^/?#]+)\/?$/)
+      if (!m) return
+      const slug = m[1].toLowerCase()
+      if (!this.SKIP_SLUGS.has(slug)) {
+        urls.add(`${this.BASE_URL}/credit-cards/${slug}/`)
+      }
+    })
+
+    // Strategy 2: scan RSC/JSON payload embedded in page for card paths
+    // PoT App Router inlines RSC chunks as __next_f.push([1, "..."]) calls
+    if (urls.size < 5) {
+      const pathRe = /\/credit-cards\/([a-z0-9][a-z0-9-]{6,80})\//g
+      let m: RegExpExecArray | null
+      while ((m = pathRe.exec(html)) !== null) {
+        const slug = m[1]
+        if (!this.SKIP_SLUGS.has(slug)) {
+          urls.add(`${this.BASE_URL}/credit-cards/${slug}/`)
+        }
+      }
+    }
+
+    return [...urls]
+  }
+
+  // ── Individual card page ──────────────────────────────────────────────────
+  private async scrapeCardPage(url: string): Promise<ScrapedOffer | null> {
+    const res = await this.fetchWithTimeout(url)
+    if (!res.ok) {
+      console.warn(`[princeoftravel] HTTP ${res.status} for ${url}`)
+      return null
+    }
+
+    const html = await res.text()
+    const $ = cheerio.load(html)
+
+    // ── Card name ─────────────────────────────────────────────────────────
+    const cardName = (
+      $('h1').first().text().trim() ||
+      $('title').text().split(/[|–-]/)[0].trim()
+    ).replace(/\s+/g, ' ')
+    if (!cardName || cardName.length < 5) return null
+
+    const issuer_slug = resolveIssuer(cardName)
+    if (!KNOWN_ISSUER_SLUGS.has(issuer_slug)) return null
+
+    // ── Card image ────────────────────────────────────────────────────────
+    // PoT renders the card art in the hero section. Skip tiny icons / logos.
+    let image_url: string | undefined
+    // Prefer <img> whose src contains the card slug or "card" keyword
+    const urlSlug = url.split('/').filter(Boolean).pop() ?? ''
+    $('main img, article img, section img, div[class*="hero"] img, div[class*="card"] img').each((_, img) => {
+      if (image_url) return
+      const src = $(img).attr('src') ?? $(img).attr('data-src') ?? ''
+      if (!src || src.startsWith('data:') || src.includes('logo') || src.includes('icon')) return
+      const w = parseInt($(img).attr('width') ?? '0')
+      if (w && w < 80) return // skip tiny thumbnails
+      image_url = src.startsWith('http') ? src : `${this.BASE_URL}${src}`
+    })
+    // Fallback: first img in the page body that looks like a card
+    if (!image_url) {
+      $('img').each((_, img) => {
+        if (image_url) return
+        const src = $(img).attr('src') ?? ''
+        if (!src || src.startsWith('data:')) return
+        if (src.includes(urlSlug) || /card|credit/i.test($(img).attr('alt') ?? '')) {
+          image_url = src.startsWith('http') ? src : `${this.BASE_URL}${src}`
+        }
+      })
+    }
+
+    // ── Apply link ────────────────────────────────────────────────────────
+    let apply_url: string | undefined
+    $('a').each((_, a) => {
+      if (apply_url) return
+      const href = $(a).attr('href') ?? ''
+      const text = $(a).text().trim().toLowerCase()
+      if (!href || href.startsWith('#')) return
+      if (
+        text === 'apply now' || text === 'apply' ||
+        /apply[\s-]?now/i.test(text) ||
+        href.includes('/apply') || href.includes('referral')
+      ) {
+        apply_url = href.startsWith('http') ? href : `${this.BASE_URL}${href}`
+      }
+    })
+    // If no explicit apply link, use the PoT card page itself as the source
+    if (!apply_url) apply_url = url
+
+    // ── Welcome offer section ─────────────────────────────────────────────
+    let headline = ''
+    const bulletPoints: string[] = []
+    let expires_at: string | undefined
+    let points_value: number | undefined
+    let spend_requirement: number | undefined
+    let spend_timeframe_days: number | undefined
+
+    // Strategy A: find heading labelled "Welcome Offer" / "Welcome Bonus",
+    // then harvest the following <ul>/<ol>/<p> siblings.
+    $('h2, h3, h4, h5').each((_, heading) => {
+      const headingText = $(heading).text().trim()
+      if (!/welcome\s*(offer|bonus)/i.test(headingText)) return
+
+      // Walk siblings until the next heading
+      let $el = $(heading).next()
+      let gathered = 0
+      while ($el.length && gathered < 10) {
+        const tag = ($el[0] as any).tagName?.toLowerCase() ?? ''
+        if (/^h[1-6]$/.test(tag)) break
+        if (tag === 'ul' || tag === 'ol') {
+          $el.find('li').each((_, li) => {
+            const t = $(li).text().replace(/\s+/g, ' ').trim()
+            if (t) bulletPoints.push(t)
+          })
+          gathered++
+        } else if (tag === 'p' || tag === 'div') {
+          const t = $el.text().replace(/\s+/g, ' ').trim()
+          if (t.length > 10) { bulletPoints.push(t); gathered++ }
+        }
+        $el = $el.next()
+      }
+    })
+
+    // Strategy B: look for "Welcome bonus" label <span> (same pattern as the
+    // /best-credit-cards/ pages — cards appear twice, deduplication not needed
+    // here since we are on a single-card page).
+    if (bulletPoints.length === 0) {
+      $('span, p, div').each((_, el) => {
+        if (headline) return
+        const text = $(el).text().trim()
+        if (/^welcome\s*(bonus|offer)$/i.test(text)) {
+          const nextText = $(el).next().text().replace(/\s+/g, ' ').trim()
+          if (nextText) headline = nextText
+        }
+      })
+    }
+
+    // Strategy C: page-wide text scan looking for offer-keyword sentences
+    if (bulletPoints.length === 0 && !headline) {
+      scanPageOffers($).forEach(t => bulletPoints.push(t))
+    }
+
+    // ── Parse values out of bullet points ────────────────────────────────
+    for (const bullet of bulletPoints) {
+      if (!points_value) points_value = this.parsePoints(bullet)
+      if (!spend_requirement) {
+        const s = this.parseSpend(bullet)
+        if (s) { spend_requirement = s.amount; spend_timeframe_days = s.days }
+      }
+      if (!expires_at && /expir|valid until|offer ends/i.test(bullet)) {
+        expires_at = this.parseExpiry(bullet)
+      }
+    }
+
+    // Build headline: first meaningful bullet, or the value from the label span
+    if (!headline) {
+      headline = bulletPoints[0] ?? ''
+    }
+    if (!headline) headline = cardName // last resort
+
+    // Pick up points / spend from headline too if bullets were empty
+    if (!points_value) points_value = this.parsePoints(headline)
+    if (!spend_requirement) {
+      const s = this.parseSpend(headline)
+      if (s) { spend_requirement = s.amount; spend_timeframe_days = s.days }
+    }
+
+    // ── Earn-rate multipliers ─────────────────────────────────────────────
+    // Look for leaf text nodes that describe per-category earn rates,
+    // e.g. "Earn 3 points per $1 on dining" or "3x points on groceries"
+    const earn_rate_multipliers: Record<string, number> = {}
+    $('li, p, td, span').each((_, el) => {
+      // Only process leaf / near-leaf nodes to avoid double-counting parents
+      if ($(el).children('li, p, td').length > 0) return
+      const text = $(el).text().replace(/\s+/g, ' ').trim()
+      // Match patterns like "3x points on dining" or "Earn 5 points per $1 on travel"
+      const re = /(?:earn\s+)?(\d+(?:\.\d+)?)\s*(?:x|pts?|points?|miles?)\s*(?:per\s*\$1\s*)?(?:on|for|at|in)\s+([a-z &]+?)(?:\s*\.|,|;|—|$)/gi
+      let m: RegExpExecArray | null
+      while ((m = re.exec(text)) !== null) {
+        const rate = parseFloat(m[1])
+        const category = m[2].trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '')
+        if (category && rate >= 1 && rate <= 30 && !earn_rate_multipliers[category]) {
+          earn_rate_multipliers[category] = rate
+        }
+      }
+    })
+
+    if (!headline || headline.length < 5) return null
+
+    return {
+      card_name: cardName,
+      issuer_slug,
+      offer_type: 'welcome_bonus',
+      headline: headline.slice(0, 250),
+      details: bulletPoints.length > 1
+        ? bulletPoints.join(' • ').slice(0, 1000)
+        : undefined,
+      points_value,
+      spend_requirement,
+      spend_timeframe_days,
+      extra_perks: bulletPoints.length > 1 ? bulletPoints.slice(1, 6) : undefined,
+      is_limited_time: !!expires_at,
+      expires_at,
+      source_url: url,
+      apply_url,
+      image_url,
+      earn_rate_multipliers: Object.keys(earn_rate_multipliers).length
+        ? earn_rate_multipliers
+        : undefined,
+    }
   }
 }

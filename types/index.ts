@@ -114,6 +114,8 @@ export interface ScrapedOffer {
   source_url: string
   apply_url?: string
   image_url?: string   // scraped card image — saved to credit_cards.image_url if not already set
+  // Earn rate multipliers to save back to credit_cards (only written if currently NULL).
+  earn_rate_multipliers?: Record<string, number>
   // Per-offer trust overrides — if set, take precedence over the scraper class defaults.
   // Use these to downgrade individual offers that came from a hardcoded fallback rather
   // than a live scrape (e.g. sourcePriority: 3, isVerified: false).

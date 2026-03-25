@@ -156,12 +156,17 @@ export abstract class BaseScraper {
 
       if (card) {
         card_id = card.id
-        if (offer.image_url) {
-          await supabaseAdmin
-            .from('credit_cards')
-            .update({ image_url: offer.image_url })
-            .eq('id', card_id)
-            .is('image_url', null)
+        const cardUpdates: Record<string, unknown> = {}
+        if (offer.image_url) cardUpdates.image_url = offer.image_url
+        if (offer.earn_rate_multipliers && Object.keys(offer.earn_rate_multipliers).length) {
+          cardUpdates.earn_rate_multipliers = offer.earn_rate_multipliers
+        }
+        if (Object.keys(cardUpdates).length) {
+          // Build query — only write fields that are currently NULL
+          let q = supabaseAdmin.from('credit_cards').update(cardUpdates).eq('id', card_id)
+          if (cardUpdates.image_url) q = q.is('image_url', null)
+          if (cardUpdates.earn_rate_multipliers) q = q.is('earn_rate_multipliers', null)
+          await q
         }
       } else {
         card_id = await this.ensureCard(offer)
