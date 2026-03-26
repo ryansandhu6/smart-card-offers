@@ -113,31 +113,6 @@ export async function getMortgageRates() {
   return data
 }
 
-export async function upsertOffer(offer: {
-  card_id: string
-  offer_type: string
-  headline: string
-  points_value?: number
-  cashback_value?: number
-  spend_requirement?: number
-  spend_timeframe_days?: number
-  extra_perks?: string[]
-  is_limited_time?: boolean
-  expires_at?: string
-  source_url: string
-  apply_url?: string
-}) {
-  const { data, error } = await supabaseAdmin
-    .from('card_offers')
-    .upsert(
-      { ...offer, scraped_at: new Date().toISOString(), is_active: true },
-      { onConflict: 'card_id,offer_type,headline' }
-    )
-    .select()
-
-  if (error) throw error
-  return data
-}
 
 export async function upsertMortgageRate(rate: {
   lender: string
