@@ -243,6 +243,67 @@ Returns a single card by its URL slug with full offer details.
 
 ---
 
+### `GET /api/cards/compare`
+
+Returns 2–3 cards side-by-side with their best active offer. Used to power comparison UI.
+
+**Query params:**
+
+| Param | Required | Description |
+|-------|----------|-------------|
+| `slugs` | Yes | Comma-separated list of 2–3 card slugs |
+
+**Errors:**
+- `400` — fewer than 2 or more than 3 slugs provided
+- `404` — any slug not found or inactive
+
+**Example call:**
+```
+GET /api/cards/compare?slugs=amex-cobalt,td-aeroplan-visa-infinite,rbc-avion-visa-infinite
+```
+
+**Example response:**
+```json
+{
+  "cards": [
+    {
+      "id": "uuid",
+      "name": "American Express Cobalt Card",
+      "slug": "amex-cobalt",
+      "image_url": "https://nlfaxenxsxtmlaawputs.supabase.co/storage/v1/object/public/card-images/amex-cobalt.png",
+      "referral_url": null,
+      "annual_fee": 155.88,
+      "rewards_type": "points",
+      "rewards_program": "Amex MR",
+      "earn_rate_base": 1.0,
+      "earn_rate_multipliers": { "dining": 5, "groceries": 5 },
+      "lounge_access": false,
+      "travel_insurance": true,
+      "tier": "entry",
+      "issuer": { "name": "American Express", "slug": "amex" },
+      "best_offer": {
+        "offer_type": "welcome_bonus",
+        "headline": "22,000 Amex MR points...",
+        "points_value": 22000,
+        "cashback_value": null,
+        "spend_requirement": 750,
+        "spend_timeframe_days": 360,
+        "is_limited_time": false,
+        "is_better_than_usual": false
+      }
+    }
+  ]
+}
+```
+
+**Notes:**
+- Cards are returned in the same order as the `slugs` param.
+- `best_offer` is the single highest-value active offer per card (highest `points_value` for points/hybrid; highest `cashback_value` for cashback). `null` if no active offers.
+- `is_better_than_usual` is derived from the `offer_history_stats` view — `true` when the current value exceeds the 12-month average for that card/offer type.
+- `referral_url` is always present (may be `null`).
+
+---
+
 ### `GET /api/offers`
 
 Returns active card offers sorted by trust rank (bank-direct first, then highest points/cashback).

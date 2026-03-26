@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
     rewards_type: searchParams.get('rewards_type') ?? undefined,
     tags:         searchParams.get('tags')?.split(',').filter(Boolean),
     is_featured:  searchParams.get('featured') === 'true' ? true : undefined,
-    page:         parseInt(searchParams.get('page')  ?? '1'),
-    limit:        parseInt(searchParams.get('limit') ?? '20'),
+    page:         Math.max(1, parseInt(searchParams.get('page')  ?? '1')  || 1),
+    limit:        Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '20') || 20)),
   }
 
   try {

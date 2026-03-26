@@ -1,7 +1,7 @@
 // lib/scraper-base.ts
 // Base class all card scrapers extend. Handles logging, timing, error recovery.
 
-import { supabaseAdmin, logScrape } from './supabase'
+import { supabaseAdmin, logScrape, logOfferHistory, markExpiredOffersInactive } from './supabase'
 import type { ScrapedOffer, ScrapedMortgageRate, ScrapeResult } from '../types'
 
 // -----------------------------------------------
@@ -123,6 +123,8 @@ export abstract class BaseScraper {
 
     // Mark any offers not seen in 7+ days as inactive
     await this.markStaleOffersInactive()
+    // Mark any offers whose expires_at is in the past as inactive
+    await markExpiredOffersInactive()
 
     const duration_ms = Date.now() - this.startTime
 
@@ -204,6 +206,7 @@ export abstract class BaseScraper {
       // mintflying (3) run, even if the headline text matches.
       if ((existing.source_priority ?? 99) <= incomingPriority) {
         // Existing row has equal or higher trust — heartbeat refresh only.
+        // Do NOT log to offer_history: no content change.
         const { error } = await supabaseAdmin
           .from('card_offers')
           .update({ last_seen_at: now, confidence_score: confidence, is_active: true })
@@ -232,6 +235,8 @@ export abstract class BaseScraper {
           })
           .eq('id', existing.id)
         if (error) throw new Error(`offer overwrite failed: ${error.message}`)
+        // Log history — logOfferHistory will check if values actually changed
+        await logOfferHistory({ card_id, offer_type: offer.offer_type, headline: offer.headline, points_value: offer.points_value, cashback_value: offer.cashback_value, spend_requirement: offer.spend_requirement, spend_timeframe_days: offer.spend_timeframe_days, source_priority: incomingPriority })
       }
     } else {
       // New offer — insert
@@ -258,6 +263,8 @@ export abstract class BaseScraper {
           is_active: true,
         })
       if (error) throw new Error(`offer insert failed: ${error.message}`)
+      // Always log new offers to history
+      await logOfferHistory({ card_id, offer_type: offer.offer_type, headline: offer.headline, points_value: offer.points_value, cashback_value: offer.cashback_value, spend_requirement: offer.spend_requirement, spend_timeframe_days: offer.spend_timeframe_days, source_priority: incomingPriority })
     }
   }
 

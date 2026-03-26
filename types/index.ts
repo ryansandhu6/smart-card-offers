@@ -41,7 +41,7 @@ export interface CreditCard {
   is_active: boolean
   is_featured: boolean
   tags?: string[]
-  current_offer?: CardOffer
+  current_offers?: CardOffer[]
 }
 
 export interface CardOffer {
@@ -143,4 +143,63 @@ export interface ScrapeResult {
   records_updated: number
   error?: string
   duration_ms: number
+}
+
+export interface OfferHistory {
+  id: string
+  card_id: string
+  offer_type: string
+  headline: string
+  points_value: number | null
+  cashback_value: number | null
+  spend_requirement: number | null
+  spend_timeframe_days: number | null
+  source_priority: number
+  first_seen_at: string
+  last_seen_at: string
+  is_active: boolean
+  created_at: string
+}
+
+export interface OfferHistoryStats {
+  card_id: string
+  offer_type: string
+  all_time_high_points: number | null
+  avg_points_12mo: number | null
+  all_time_high_cashback: number | null
+  avg_cashback_12mo: number | null
+  total_offers_seen: number
+}
+
+export interface CompareBestOffer {
+  offer_type: OfferType
+  headline: string
+  points_value: number | null
+  cashback_value: number | null
+  spend_requirement: number | null
+  spend_timeframe_days: number | null
+  is_limited_time: boolean
+  is_better_than_usual: boolean
+}
+
+export interface CompareCard {
+  id: string
+  name: string
+  slug: string
+  image_url: string | null
+  referral_url: string | null
+  annual_fee: number
+  rewards_type: RewardsType
+  rewards_program: string | null
+  earn_rate_base: number | null
+  earn_rate_multipliers: Record<string, number> | null
+  lounge_access: boolean
+  travel_insurance: boolean
+  tier: CardTier
+  issuer: Pick<Issuer, 'name' | 'slug'>
+  best_offer: CompareBestOffer | null
+}
+
+export interface CompareResponse {
+  cards: CompareCard[]
 }

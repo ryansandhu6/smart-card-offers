@@ -1,79 +1,82 @@
 // scripts/download-card-images.ts
-// Downloads remote card images to public/images/cards/ and updates Supabase image_url to local path.
+// Uploads remote card images to Supabase Storage bucket 'card-images' and updates image_url.
+//
+// - Skips cards where image_url already contains 'supabase.co' (already migrated)
+// - Skips cards with no image_url
+// - Handles all active cards — PoT covers ~97; the rest get skipped unless manually set
 //
 // Usage:
 //   DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/download-card-images.ts
+//
+// Bucket setup (one-time in Supabase dashboard):
+//   Storage → New bucket → name: "card-images" → Public: ON
 
-import * as fs from 'fs'
-import * as path from 'path'
-import * as https from 'https'
-import * as http from 'http'
 import { supabaseAdmin } from '../lib/supabase'
 
-const OUTPUT_DIR = path.join(process.cwd(), 'public', 'images', 'cards')
-
-function ensureDir(dir: string) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-}
+const SUPABASE_PROJECT_ID = 'nlfaxenxsxtmlaawputs'
+const BUCKET = 'card-images'
+const PUBLIC_BASE = `https://${SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/${BUCKET}`
 
 function extFromUrl(url: string): string {
   try {
     const pathname = new URL(url).pathname
-    const ext = path.extname(pathname).toLowerCase()
-    if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'].includes(ext)) return ext
+    const ext = pathname.split('.').pop()?.toLowerCase() ?? ''
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext)) return `.${ext}`
   } catch {}
   return '.png'
 }
 
-function downloadFile(url: string, dest: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const proto = url.startsWith('https') ? https : http
-    const file = fs.createWriteStream(dest)
+function mimeFromExt(ext: string): string {
+  const map: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+  }
+  return map[ext] ?? 'image/png'
+}
 
-    const req = proto.get(url, { timeout: 15_000 }, (res) => {
-      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        // Follow one redirect
-        file.close()
-        fs.unlink(dest, () => {})
-        downloadFile(res.headers.location!, dest).then(resolve).catch(reject)
-        return
-      }
-      if (res.statusCode !== 200) {
-        file.close()
-        fs.unlink(dest, () => {})
-        reject(new Error(`HTTP ${res.statusCode} for ${url}`))
-        return
-      }
-      res.pipe(file)
-      file.on('finish', () => file.close(() => resolve()))
-    })
+async function fetchImageBytes(url: string): Promise<Buffer> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20_000)
 
-    req.on('error', (err) => {
-      file.close()
-      fs.unlink(dest, () => {})
-      reject(err)
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 SmartCardOffers-ImageBot/1.0' },
+      redirect: 'follow',
     })
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
+    const arrayBuffer = await res.arrayBuffer()
+    return Buffer.from(arrayBuffer)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
-    req.on('timeout', () => {
-      req.destroy()
-      file.close()
-      fs.unlink(dest, () => {})
-      reject(new Error(`Timeout downloading ${url}`))
-    })
-  })
+async function uploadToStorage(slug: string, ext: string, bytes: Buffer): Promise<string> {
+  const storagePath = `${slug}${ext}`
+  const contentType = mimeFromExt(ext)
+
+  // upsert: true overwrites if re-running for the same slug
+  const { error } = await supabaseAdmin.storage
+    .from(BUCKET)
+    .upload(storagePath, bytes, { contentType, upsert: true })
+
+  if (error) throw new Error(`Storage upload failed: ${error.message}`)
+
+  return `${PUBLIC_BASE}/${storagePath}`
 }
 
 async function main() {
-  ensureDir(OUTPUT_DIR)
-
-  // Fetch all cards with a remote image_url (not already a local path)
+  // Fetch all cards that have a remote image URL but aren't already on Supabase Storage
   const { data: cards, error } = await supabaseAdmin
     .from('credit_cards')
     .select('id, slug, image_url')
     .not('image_url', 'is', null)
-    .not('image_url', 'like', '/images/%')
+    .not('image_url', 'ilike', '%nlfaxenxsxtmlaawputs.supabase.co%')
 
   if (error) {
     console.error('Failed to fetch cards:', error.message)
@@ -81,49 +84,59 @@ async function main() {
   }
 
   if (!cards || cards.length === 0) {
-    console.log('No cards with remote image URLs found.')
+    console.log('No cards with remote image URLs found — all images may already be in Supabase Storage.')
     return
   }
 
-  console.log(`Found ${cards.length} cards with remote image URLs.\n`)
+  console.log(`Found ${cards.length} cards with remote image URLs to migrate.\n`)
 
-  let downloaded = 0
+  let uploaded = 0
   let failed = 0
+  let skipped = 0
 
   for (const card of cards) {
     const url = card.image_url as string
-    const ext = extFromUrl(url)
-    const filename = `${card.slug}${ext}`
-    const localPath = path.join(OUTPUT_DIR, filename)
-    const publicPath = `/images/cards/${filename}`
 
-    process.stdout.write(`[${card.slug}] Downloading ${url} ... `)
+    // Skip local paths (shouldn't exist in prod, but guard anyway)
+    if (url.startsWith('/')) {
+      console.log(`[${card.slug}] SKIP — local path: ${url}`)
+      skipped++
+      continue
+    }
+
+    const ext = extFromUrl(url)
+    process.stdout.write(`[${card.slug}] ${url} ... `)
 
     try {
-      await downloadFile(url, localPath)
+      const bytes = await fetchImageBytes(url)
+      const publicUrl = await uploadToStorage(card.slug as string, ext, bytes)
 
       const { error: updateError } = await supabaseAdmin
         .from('credit_cards')
-        .update({ image_url: publicPath })
+        .update({ image_url: publicUrl })
         .eq('id', card.id)
 
       if (updateError) {
-        console.log(`DOWNLOAD OK but DB update failed: ${updateError.message}`)
+        console.log(`UPLOAD OK but DB update failed: ${updateError.message}`)
         failed++
       } else {
-        console.log(`OK → ${publicPath}`)
-        downloaded++
+        console.log(`OK → ${publicUrl}`)
+        uploaded++
       }
     } catch (err) {
       console.log(`FAILED — ${err instanceof Error ? err.message : String(err)}`)
       failed++
     }
 
-    // Small delay to avoid hammering CDNs
+    // Avoid hammering CDNs
     await new Promise(r => setTimeout(r, 300))
   }
 
-  console.log(`\nDone. ${downloaded} downloaded, ${failed} failed.`)
+  console.log(`\nDone. ${uploaded} uploaded, ${failed} failed, ${skipped} skipped.`)
+
+  if (failed > 0) {
+    console.log('\nFailed cards will retain their original URLs — re-run the script to retry them.')
+  }
 }
 
 main().catch((err) => {
