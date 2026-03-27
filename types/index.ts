@@ -22,22 +22,37 @@ export interface CreditCard {
   name: string
   slug: string
   card_type: CardType
+  card_network?: string
   tier: CardTier
   annual_fee: number
   annual_fee_waived_first_year: boolean
+  supplementary_card_fee?: number
   rewards_program?: string
   rewards_type: RewardsType
   earn_rate_base?: number
   earn_rate_multipliers?: Record<string, number>   // { dining: 3, groceries: 2 }
   transfer_partners?: string[]
   lounge_access: boolean
+  airport_lounge_network?: string
   travel_insurance: boolean
   purchase_protection: boolean
+  extended_warranty?: boolean
+  price_protection?: boolean
+  rental_car_insurance?: boolean
+  mobile_wallet?: string[]
   foreign_transaction_fee?: number
   credit_score_min?: CreditScore
+  min_income?: number
+  income_type?: string
   apply_url?: string
   referral_url?: string
   image_url?: string
+  short_description?: string
+  pros?: string[]
+  cons?: string[]
+  best_for?: string[]
+  card_color?: string
+  signup_bonus_description?: string
   is_active: boolean
   is_featured: boolean
   tags?: string[]
@@ -62,9 +77,10 @@ export interface CardOffer {
   source_url?: string
   scraped_at?: string
   is_active: boolean
-  source_priority?: number    // 1=bank-direct, 2=aggregator, 3=hardcoded
+  source_priority?: number    // 1=churning, 2=prince, 3=bank, 4=aggregator
   last_seen_at?: string
   confidence_score?: number   // 1-100, computed from priority + verified + recency
+  is_better_than_usual: boolean  // true if value > 90-day rolling avg in offer_history
 }
 
 export interface MortgageRate {
@@ -121,6 +137,11 @@ export interface ScrapedOffer {
   // than a live scrape (e.g. sourcePriority: 3, isVerified: false).
   sourcePriority?: number
   isVerified?: boolean
+  // Internal: pre-resolved card UUID.  If set, BaseScraper.saveOffer() skips the
+  // card name lookup and creation step entirely.  Set by scrapers that resolve
+  // cards ahead of time (e.g. ChurningCanadaScraper) so they can enforce
+  // "never create new card rows" without overriding the full save pipeline.
+  _card_id?: string
 }
 
 export interface ScrapedMortgageRate {
@@ -141,6 +162,7 @@ export interface ScrapeResult {
   status: 'success' | 'partial' | 'failed'
   records_found: number
   records_updated: number
+  records_skipped: number   // offers blocked by source-priority guard
   error?: string
   duration_ms: number
 }

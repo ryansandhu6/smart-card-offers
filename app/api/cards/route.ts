@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCards } from '@/lib/supabase'
+import { getCards, searchCards } from '@/lib/supabase'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
+
+  const q = searchParams.get('q')?.trim() ?? ''
 
   const filters = {
     issuer_slug:  searchParams.get('issuer') ?? undefined,
@@ -15,6 +17,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    if (q) {
+      const { data: cards, total } = await searchCards(q, filters)
+      return NextResponse.json({ cards, count: cards.length, total, query: q })
+    }
+
     const { data: cards, total } = await getCards(filters)
     return NextResponse.json({ cards, count: cards.length, total })
   } catch (err) {

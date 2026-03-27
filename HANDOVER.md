@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-03-24 (scraper simplification — 5 active scrapers, ~202 offers)
+> Last updated: 2026-03-26 (migrations 011–018: slug fixes, logos, tags, AI content generation, audit cleanup)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -1284,4 +1284,62 @@ export default async function HomePage() {
 - `points_value` and `cashback_value` are mutually exclusive — check which one is set (see [Section 8](#8-data-quality-notes))
 - Use `confidence_score` to show verified vs unverified badges (see [Section 8](#8-data-quality-notes))
 - Use `cpp_mid` from `/api/valuations` to show "≈ $X value" next to point amounts (see [Section 9](#9-points-valuations--dollar-value-calculation))
+
+---
+
+## 14. Session Summary — 2026-03-26 (Migrations 011–018)
+
+### Migrations Applied
+
+| # | File | What Changed |
+|---|------|-------------|
+| 011 | `011_fix_slugs.sql` | Fixed 2 trailing-dash slugs: `national-bank-world-elite-mastercard`, `neo-world-mastercard` |
+| 012 | `012_issuer_logos.sql` | Added `logo_url` to all 20 issuers via Clearbit CDN |
+| 013 | `013_default_tags.sql` | Backfilled `tags = '{}'` for 102 null rows; set column default to `'{}'` |
+| 014 | `014_manual_fixes.sql` | Added `apply_url` for 11 cards; renamed TD card; deactivated 3 cards; added MBNA offer |
+| 015 | `015_fix_offer_values.sql` | Populated `points_value`/`cashback_value` for 129 offers; deactivated 41 junk offers |
+| 016 | `016_rewards_program.sql` | Populated `rewards_program` for all 83 null cards across 25+ programs |
+| 017 | _(script only)_ | AI-generated `short_description`, `pros`, `cons`, `tags` for all 93 active cards via `scripts/generate-card-content.ts` |
+| 018 | `018_deactivate_no_offer_cards.sql` | Deactivated 15 active cards with zero active offers — 93 → **78 active cards** |
+
+### Current Data State
+
+- **78 active cards**, each with at least one active offer in `card_offers`
+- **0 null values** on any critical field: `slug`, `name`, `apply_url`, `rewards_program`, `rewards_type`, `card_type`, `tier`, `short_description`, `pros`, `cons`, `tags`, `issuer_id`
+- **All slugs clean** — no trailing dashes, no special characters, no duplicates
+- **All 20 issuers** have `logo_url` set
+- **All active offers** have either `points_value` or `cashback_value` set
+
+### Cards Deactivated in Migration 018
+
+The following 15 cards were set `is_active = false` (no active offers existed for them). Reactivate once offer data is sourced:
+
+- Canadian Tire Triangle World Elite Mastercard
+- MBNA True Line Mastercard
+- National Bank® World Elite® Mastercard®
+- Neo World Elite® Mastercard
+- Neo World Mastercard®
+- RBC Visa Classic Low Rate
+- RBC Visa Platinum
+- Rogers Red Mastercard
+- Rogers Red World Elite Mastercard
+- Scotia Momentum® Visa Infinite\* Card
+- Scotiabank Momentum Mastercard
+- Scotiabank Momentum Visa
+- Scotiabank Value Visa Card
+- TD Cash Back Visa Card
+- TD Low Rate Visa Card
+
+### Scripts Added
+
+| Script | Purpose | Safe to rerun? |
+|--------|---------|---------------|
+| `scripts/generate-card-content.ts` | AI-generates `short_description`, `pros`, `cons`, `tags` for cards with null `short_description` | ✅ Yes — skips already-populated cards |
+| `scripts/audit.ts` | Full data quality audit across `credit_cards`, `card_offers`, `issuers` | ✅ Yes — read-only |
+
+### Remaining TODOs
+
+1. **Manual referral URLs** — replace `apply_url` with own affiliate/referral links on high-value cards (`referral_url` column already exists in schema)
+2. **Admin UI** — interface for editing card/offer content without touching the DB directly
+3. **Offer description cleanup** — script to generate clean `details` summaries for sparse/scraped offer text; same pattern as `generate-card-content.ts`
 - Track apply clicks by calling `POST /api/track-click` before redirecting to the card's apply URL (see [Section 5](#5-api-endpoints))

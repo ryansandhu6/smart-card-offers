@@ -9,7 +9,7 @@ import type { ScrapedOffer } from '../types'
 export class AmexScraper extends BaseScraper {
   name = 'amex-canada'
   issuerSlug = 'amex'
-  protected sourcePriority = 2   // bank-direct, but PoT (priority 1) has richer data
+  protected sourcePriority = 3   // bank-direct
   protected isVerified = true
 
   // Known Amex Canada cards with their offer pages
@@ -139,7 +139,7 @@ export class AmexScraper extends BaseScraper {
       source_url: card.url,
       apply_url: card.url,
       // Hardcoded fallback data is less trustworthy than a live scrape
-      ...(usedFallback ? { sourcePriority: 3, isVerified: false } : {}),
+      ...(usedFallback ? { sourcePriority: 4, isVerified: false } : {}),
     }
   }
 

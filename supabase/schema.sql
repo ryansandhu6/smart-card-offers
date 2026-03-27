@@ -49,6 +49,16 @@ CREATE TABLE credit_cards (
   best_for TEXT[],
   min_income INTEGER,
   card_color TEXT,
+  -- Income / fee fields (migration 006)
+  income_type TEXT,                             -- 'personal' | 'household' | 'business'
+  supplementary_card_fee NUMERIC(8,2),          -- Annual fee per additional cardholder
+  -- Travel benefit fields (migration 006)
+  mobile_wallet TEXT[],                         -- ['Apple Pay', 'Google Pay', 'Samsung Pay']
+  extended_warranty BOOLEAN DEFAULT false,
+  price_protection BOOLEAN DEFAULT false,
+  rental_car_insurance BOOLEAN DEFAULT false,
+  airport_lounge_network TEXT,                  -- 'Priority Pass' | 'Amex Centurion' | etc.
+  signup_bonus_description TEXT,                -- Human-readable welcome bonus summary
   is_active BOOLEAN DEFAULT true,
   is_featured BOOLEAN DEFAULT false,
   tags TEXT[],                              -- ["travel", "no-fx-fee", "aeroplan"]
@@ -79,6 +89,7 @@ CREATE TABLE card_offers (
   source_priority INTEGER NOT NULL DEFAULT 2,  -- 1=bank-direct, 2=aggregator, 3=hardcoded
   last_seen_at TIMESTAMPTZ,
   confidence_score INTEGER,
+  is_better_than_usual BOOLEAN NOT NULL DEFAULT false,  -- migration 008
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
@@ -184,6 +195,7 @@ CREATE TABLE scrape_logs (
   status TEXT CHECK (status IN ('success', 'partial', 'failed')),
   records_found INTEGER DEFAULT 0,
   records_updated INTEGER DEFAULT 0,
+  records_skipped INTEGER NOT NULL DEFAULT 0,  -- offers blocked by source-priority guard
   error_message TEXT,
   duration_ms INTEGER,
   ran_at TIMESTAMPTZ DEFAULT now()
@@ -323,3 +335,37 @@ SELECT
 FROM offer_history
 WHERE first_seen_at > now() - interval '12 months'
 GROUP BY card_id, offer_type;
+
+-- -----------------------------------------------
+-- MIGRATION 008: is_better_than_usual trigger
+-- -----------------------------------------------
+-- Keeps card_offers.is_better_than_usual in sync automatically.
+-- Fires BEFORE INSERT OR UPDATE; compares incoming value against
+-- the 90-day rolling average from offer_history.
+CREATE OR REPLACE FUNCTION refresh_is_better_than_usual()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_avg_points   NUMERIC;
+  v_avg_cashback NUMERIC;
+BEGIN
+  SELECT AVG(points_value), AVG(cashback_value)
+  INTO v_avg_points, v_avg_cashback
+  FROM offer_history
+  WHERE card_id    = NEW.card_id
+    AND offer_type = NEW.offer_type
+    AND first_seen_at > now() - interval '90 days';
+
+  NEW.is_better_than_usual :=
+    COALESCE(NEW.points_value   > v_avg_points,   false)
+    OR
+    COALESCE(NEW.cashback_value > v_avg_cashback, false);
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_card_offers_is_better_than_usual
+  BEFORE INSERT OR UPDATE
+  ON card_offers
+  FOR EACH ROW
+  EXECUTE FUNCTION refresh_is_better_than_usual();

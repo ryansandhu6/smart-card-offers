@@ -72,15 +72,16 @@ export abstract class BaseScraper {
 
   /**
    * Source trust level — lower number = higher trust.
-   *   1 = richest / curated  (PrinceOfTravelScraper, ChurningCanadaScraper)
-   *   2 = bank-direct        (AmexScraper, TDScraper)
-   *   3 = aggregator         (MintFlyingScraper)
+   *   1 = churning community  (ChurningCanadaScraper)
+   *   2 = curated editorial   (PrinceOfTravelScraper)
+   *   3 = bank-direct         (Scotiabank, BMO, RBC, CIBC, Amex, TD scrapers)
+   *   4 = aggregator          (MintFlyingScraper, RatehubCardsScraper)
    *
-   * A priority-2 source will NEVER overwrite a priority-1 row's content.
-   * A priority-3 source will NEVER overwrite a priority-1 or priority-2 row's content.
-   * In both cases only `last_seen_at` and `confidence_score` are refreshed.
+   * A higher-numbered source will NEVER overwrite a lower-numbered row's content.
+   * On a priority clash only `last_seen_at` and `confidence_score` are refreshed,
+   * and the attempt is counted as `records_skipped` in scrape_logs.
    */
-  protected sourcePriority = 3   // default: aggregator tier; override in subclasses
+  protected sourcePriority = 4   // default: aggregator tier; override in subclasses
 
   /**
    * Whether offers from this scraper count as verified.
@@ -98,6 +99,7 @@ export abstract class BaseScraper {
 
     let records_found = 0
     let records_updated = 0
+    let records_skipped = 0
     let status: 'success' | 'partial' | 'failed' = 'success'
     let error: string | undefined
 
@@ -107,9 +109,18 @@ export abstract class BaseScraper {
       console.log(`[${this.name}] Found ${records_found} offers`)
 
       for (const offer of offers) {
+        // Guard: skip records with missing or sentinel headline/card_name
+        if (!offer.headline || !offer.card_name) {
+          console.warn(`[${this.name}] Skipping offer — missing headline or card_name: "${offer.card_name}" / "${offer.headline}"`)
+          continue
+        }
         try {
-          await this.saveOffer(offer)
-          records_updated++
+          const outcome = await this.saveOffer(offer)
+          if (outcome === 'skipped') {
+            records_skipped++
+          } else {
+            records_updated++
+          }
         } catch (err) {
           console.error(`[${this.name}] Failed to save offer:`, err)
           status = 'partial'
@@ -128,57 +139,70 @@ export abstract class BaseScraper {
 
     const duration_ms = Date.now() - this.startTime
 
+    if (records_skipped > 0) {
+      console.log(`[${this.name}] ${records_skipped} offer(s) blocked by priority guard (existing source has higher trust)`)
+    }
+
     await logScrape({
       scraper_name: this.name,
       status,
       records_found,
       records_updated,
+      records_skipped,
       error_message: error,
       duration_ms,
     })
 
-    console.log(`[${this.name}] Done. ${records_updated}/${records_found} saved in ${duration_ms}ms`)
+    console.log(`[${this.name}] Done. ${records_updated}/${records_found} saved, ${records_skipped} skipped in ${duration_ms}ms`)
 
-    return { scraper: this.name, status, records_found, records_updated, error, duration_ms }
+    return { scraper: this.name, status, records_found, records_updated, records_skipped, error, duration_ms }
   }
 
-  protected async saveOffer(offer: ScrapedOffer) {
-    // ── Step 1: resolve issuer ──────────────────────────────────────────────
-    const { data: issuer } = await supabaseAdmin
-      .from('issuers')
-      .select('id')
-      .eq('slug', offer.issuer_slug)
-      .maybeSingle()
-
-    // ── Step 2: find or create card ─────────────────────────────────────────
+  protected async saveOffer(offer: ScrapedOffer): Promise<'saved' | 'skipped'> {
+    // ── Step 1 & 2: resolve card ────────────────────────────────────────────
+    // Fast path: caller pre-resolved the card ID (e.g. ChurningCanadaScraper).
+    // Skip DB lookup and card creation entirely.
     let card_id: string
-    if (issuer) {
-      const { data: card } = await supabaseAdmin
-        .from('credit_cards')
+
+    if (offer._card_id) {
+      card_id = offer._card_id
+    } else {
+      // ── Step 1: resolve issuer ────────────────────────────────────────────
+      const { data: issuer } = await supabaseAdmin
+        .from('issuers')
         .select('id')
-        .eq('issuer_id', issuer.id)
-        .ilike('name', `%${offer.card_name}%`)
+        .eq('slug', offer.issuer_slug)
         .maybeSingle()
 
-      if (card) {
-        card_id = card.id
-        const cardUpdates: Record<string, unknown> = {}
-        if (offer.image_url) cardUpdates.image_url = offer.image_url
-        if (offer.earn_rate_multipliers && Object.keys(offer.earn_rate_multipliers).length) {
-          cardUpdates.earn_rate_multipliers = offer.earn_rate_multipliers
-        }
-        if (Object.keys(cardUpdates).length) {
-          // Build query — only write fields that are currently NULL
-          let q = supabaseAdmin.from('credit_cards').update(cardUpdates).eq('id', card_id)
-          if (cardUpdates.image_url) q = q.is('image_url', null)
-          if (cardUpdates.earn_rate_multipliers) q = q.is('earn_rate_multipliers', null)
-          await q
+      // ── Step 2: find or create card ───────────────────────────────────────
+      if (issuer) {
+        const { data: card } = await supabaseAdmin
+          .from('credit_cards')
+          .select('id')
+          .eq('issuer_id', issuer.id)
+          .ilike('name', `%${offer.card_name}%`)
+          .maybeSingle()
+
+        if (card) {
+          card_id = card.id
+          const cardUpdates: Record<string, unknown> = {}
+          if (offer.image_url) cardUpdates.image_url = offer.image_url
+          if (offer.earn_rate_multipliers && Object.keys(offer.earn_rate_multipliers).length) {
+            cardUpdates.earn_rate_multipliers = offer.earn_rate_multipliers
+          }
+          if (Object.keys(cardUpdates).length) {
+            // Build query — only write fields that are currently NULL
+            let q = supabaseAdmin.from('credit_cards').update(cardUpdates).eq('id', card_id)
+            if (cardUpdates.image_url) q = q.is('image_url', null)
+            if (cardUpdates.earn_rate_multipliers) q = q.is('earn_rate_multipliers', null)
+            await q
+          }
+        } else {
+          card_id = await this.ensureCard(offer)
         }
       } else {
         card_id = await this.ensureCard(offer)
       }
-    } else {
-      card_id = await this.ensureCard(offer)
     }
 
     // ── Step 3: priority-aware save ─────────────────────────────────────────
@@ -202,16 +226,15 @@ export abstract class BaseScraper {
       // If the stored row is already from an equal-or-higher-trust source
       // (existing.source_priority ≤ incomingPriority), never overwrite the offer
       // content — only refresh the heartbeat so the offer stays active.
-      // Example: a PoT (1) offer must never be overwritten by an amex (2) or
-      // mintflying (3) run, even if the headline text matches.
+      // Counted as `records_skipped` in scrape_logs.
       if ((existing.source_priority ?? 99) <= incomingPriority) {
-        // Existing row has equal or higher trust — heartbeat refresh only.
-        // Do NOT log to offer_history: no content change.
+        // Heartbeat refresh only — do NOT log to offer_history (no content change).
         const { error } = await supabaseAdmin
           .from('card_offers')
           .update({ last_seen_at: now, confidence_score: confidence, is_active: true })
           .eq('id', existing.id)
         if (error) throw new Error(`last_seen_at update failed: ${error.message}`)
+        return 'skipped'
       } else {
         // Incoming source has strictly higher trust (lower number) — full overwrite.
         const { error } = await supabaseAdmin
@@ -235,8 +258,8 @@ export abstract class BaseScraper {
           })
           .eq('id', existing.id)
         if (error) throw new Error(`offer overwrite failed: ${error.message}`)
-        // Log history — logOfferHistory will check if values actually changed
         await logOfferHistory({ card_id, offer_type: offer.offer_type, headline: offer.headline, points_value: offer.points_value, cashback_value: offer.cashback_value, spend_requirement: offer.spend_requirement, spend_timeframe_days: offer.spend_timeframe_days, source_priority: incomingPriority })
+        return 'saved'
       }
     } else {
       // New offer — insert
@@ -263,8 +286,8 @@ export abstract class BaseScraper {
           is_active: true,
         })
       if (error) throw new Error(`offer insert failed: ${error.message}`)
-      // Always log new offers to history
       await logOfferHistory({ card_id, offer_type: offer.offer_type, headline: offer.headline, points_value: offer.points_value, cashback_value: offer.cashback_value, spend_requirement: offer.spend_requirement, spend_timeframe_days: offer.spend_timeframe_days, source_priority: incomingPriority })
+      return 'saved'
     }
   }
 
@@ -460,10 +483,11 @@ export abstract class BaseMortgageScraper {
       status,
       records_found,
       records_updated,
+      records_skipped: 0,
       error_message: error,
       duration_ms,
     })
 
-    return { scraper: this.name, status, records_found, records_updated, error, duration_ms }
+    return { scraper: this.name, status, records_found, records_updated, records_skipped: 0, error, duration_ms }
   }
 }

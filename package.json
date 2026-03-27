@@ -16,6 +16,7 @@
     "download-images": "DOTENV_CONFIG_PATH=.env.local ts-node -r dotenv/config scripts/download-card-images.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@supabase/supabase-js": "^2.100.0",
     "cheerio": "^1.2.0",
     "next": "16.2.1",

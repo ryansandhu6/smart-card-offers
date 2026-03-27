@@ -38,7 +38,7 @@ function findOfferText($: cheerio.CheerioAPI): string {
 export class ScotiabankScraper extends BaseScraper {
   name = 'scotiabank-canada'
   issuerSlug = 'scotiabank'
-  protected sourcePriority = 1
+  protected sourcePriority = 3   // bank-direct
   protected isVerified = true
 
   private cards = [
@@ -118,7 +118,7 @@ export class ScotiabankScraper extends BaseScraper {
       is_limited_time: false,
       source_url: card.url,
       apply_url: card.url,
-      ...(usedFallback ? { sourcePriority: 3, isVerified: false } : {}),
+      ...(usedFallback ? { sourcePriority: 4, isVerified: false } : {}),
     }
   }
 }
@@ -133,7 +133,7 @@ export class ScotiabankScraper extends BaseScraper {
 export class BMOScraper extends BaseScraper {
   name = 'bmo-canada'
   issuerSlug = 'bmo'
-  protected sourcePriority = 1
+  protected sourcePriority = 3   // bank-direct
   protected isVerified = true
 
   private cards = [
@@ -214,7 +214,7 @@ export class BMOScraper extends BaseScraper {
       is_limited_time,
       source_url: card.url,
       apply_url: card.url,
-      ...(usedFallback ? { sourcePriority: 3, isVerified: false } : {}),
+      ...(usedFallback ? { sourcePriority: 4, isVerified: false } : {}),
     }
   }
 }
@@ -226,7 +226,7 @@ export class BMOScraper extends BaseScraper {
 export class RBCScraper extends BaseScraper {
   name = 'rbc-canada'
   issuerSlug = 'rbc'
-  protected sourcePriority = 1
+  protected sourcePriority = 3   // bank-direct
   protected isVerified = true
 
   private cards = [
@@ -303,7 +303,7 @@ export class RBCScraper extends BaseScraper {
       is_limited_time,
       source_url: card.url,
       apply_url: card.url,
-      ...(usedFallback ? { sourcePriority: 3, isVerified: false } : {}),
+      ...(usedFallback ? { sourcePriority: 4, isVerified: false } : {}),
     }
   }
 }
@@ -315,7 +315,7 @@ export class RBCScraper extends BaseScraper {
 export class CIBCScraper extends BaseScraper {
   name = 'cibc-canada'
   issuerSlug = 'cibc'
-  protected sourcePriority = 1
+  protected sourcePriority = 3   // bank-direct
   protected isVerified = true
 
   private cards = [
@@ -391,7 +391,7 @@ export class CIBCScraper extends BaseScraper {
       is_limited_time,
       source_url: card.url,
       apply_url: card.url,
-      ...(usedFallback ? { sourcePriority: 3, isVerified: false } : {}),
+      ...(usedFallback ? { sourcePriority: 4, isVerified: false } : {}),
     }
   }
 }

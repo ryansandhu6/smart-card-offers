@@ -75,6 +75,83 @@ export async function getCards(filters?: {
   return { data: data ?? [], total: count ?? 0 }
 }
 
+/**
+ * Full-text search across card name, issuer name, and offer headlines.
+ * Uses search_card_ids() Postgres function (migration 009) to rank results,
+ * then fetches the full card shape identical to getCards().
+ *
+ * Returns { data, total } — same shape as getCards() so callers are interchangeable.
+ */
+export async function searchCards(
+  q: string,
+  filters?: {
+    issuer_slug?: string
+    tier?: string
+    rewards_type?: string
+    tags?: string[]
+    is_featured?: boolean
+    page?: number
+    limit?: number
+  }
+) {
+  const pageSize = Math.min(filters?.limit ?? 20, 100)
+  const offset   = ((filters?.page ?? 1) - 1) * pageSize
+
+  // ── Step 1: ranked card IDs from Postgres FTS ────────────────────────────
+  const { data: matches, error: rpcError } = await supabaseAdmin
+    .rpc('search_card_ids', { q, p_limit: pageSize, p_offset: offset })
+
+  if (rpcError) throw rpcError
+  if (!matches?.length) return { data: [], total: 0 }
+
+  type Match = { card_id: string; rank: number; total_count: number }
+  const rows  = matches as Match[]
+  const ids   = rows.map(r => r.card_id)
+  const total = Number(rows[0].total_count)
+
+  // ── Step 2: fetch full card data for matching IDs ─────────────────────────
+  // Same select shape as getCards() so the response is identical.
+  let query = supabaseAdmin
+    .from('credit_cards')
+    .select(`
+      *,
+      issuer:issuers(*),
+      current_offers:card_offers(
+        id, offer_type, headline, points_value, cashback_value,
+        spend_requirement, spend_timeframe_days, extra_perks,
+        is_limited_time, expires_at, is_verified,
+        source_priority, last_seen_at, confidence_score
+      )
+    `)
+    .in('id', ids)
+    .eq('is_active', true)
+    .eq('card_offers.is_active', true)
+
+  // Apply the same optional filters as getCards()
+  if (filters?.is_featured)  query = query.eq('is_featured', true)
+  if (filters?.rewards_type) query = query.eq('rewards_type', filters.rewards_type)
+  if (filters?.tier)         query = query.eq('tier', filters.tier)
+  if (filters?.tags?.length) query = query.overlaps('tags', filters.tags)
+
+  if (filters?.issuer_slug) {
+    const { data: issuer } = await supabaseAdmin
+      .from('issuers').select('id').eq('slug', filters.issuer_slug).maybeSingle()
+    if (!issuer) return { data: [], total: 0 }
+    query = query.eq('issuer_id', issuer.id)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+
+  // ── Step 3: re-sort by rank (Postgres .in() does not preserve order) ──────
+  const rankMap = new Map(rows.map(r => [r.card_id, r.rank]))
+  const sorted  = (data ?? []).sort(
+    (a, b) => (rankMap.get(b.id) ?? 0) - (rankMap.get(a.id) ?? 0)
+  )
+
+  return { data: sorted, total }
+}
+
 export async function getActiveOffers(limitedTimeOnly = false, page = 1, limit = 20) {
   const pageSize = Math.min(limit, 100)
   const offset   = (page - 1) * pageSize
@@ -155,6 +232,7 @@ export async function logScrape(entry: {
   status: 'success' | 'partial' | 'failed'
   records_found: number
   records_updated: number
+  records_skipped: number
   error_message?: string
   duration_ms: number
 }) {
