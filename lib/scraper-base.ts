@@ -66,6 +66,26 @@ async function stealthFetch(
   throw new Error(`Failed to fetch ${url} after ${MAX_RETRIES} retries`)
 }
 
+// ── Shared helpers ───────────────────────────────────────────────────────────
+
+/** Remove "Sponsored" tag, asterisks, and non-printable-ASCII from a card name. */
+function cleanCardName(raw: string): string {
+  return raw
+    .replace(/\bSponsored\b/gi, '')
+    .replace(/[^\x20-\x7E]+/g, ' ')  // strip non-printable-ASCII (® ™ © etc.)
+    .replace(/\*+/g, '')              // strip asterisks (e.g. "Mastercard®*")
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Infer rewards_type from a card name when rewards_program is not yet known. */
+function inferRewardsType(cardName: string): 'points' | 'cashback' | 'hybrid' {
+  if (/cash.?back|dividend|simplycash|money.?back/i.test(cardName)) return 'cashback'
+  return 'points'
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export abstract class BaseScraper {
   abstract name: string
   abstract issuerSlug: string
@@ -82,6 +102,7 @@ export abstract class BaseScraper {
    * and the attempt is counted as `records_skipped` in scrape_logs.
    */
   protected sourcePriority = 4   // default: aggregator tier; override in subclasses
+  protected sourceName     = ''  // human-readable scraper id written to source_name column
 
   /**
    * Whether offers from this scraper count as verified.
@@ -159,6 +180,23 @@ export abstract class BaseScraper {
   }
 
   protected async saveOffer(offer: ScrapedOffer): Promise<'saved' | 'skipped'> {
+    // ── Validation — runs before any DB work ────────────────────────────────
+
+    // 1. Reject if both value fields are absent or zero
+    const hasPoints = (offer.points_value ?? 0) > 0
+    const hasCash   = (offer.cashback_value ?? 0) > 0
+    if (!hasPoints && !hasCash) {
+      console.warn(`[${this.name}] SKIP [no-value] "${offer.headline}" (${offer.card_name})`)
+      return 'skipped'
+    }
+
+    // 2. Reject bad headlines
+    const hl = offer.headline?.trim() ?? ''
+    if (!hl || hl.includes('$undefined') || hl.length < 10) {
+      console.warn(`[${this.name}] SKIP [bad-headline] "${offer.headline}" (${offer.card_name})`)
+      return 'skipped'
+    }
+
     // ── Step 1 & 2: resolve card ────────────────────────────────────────────
     // Fast path: caller pre-resolved the card ID (e.g. ChurningCanadaScraper).
     // Skip DB lookup and card creation entirely.
@@ -205,10 +243,45 @@ export abstract class BaseScraper {
       }
     }
 
+    // ── Post-resolution validation ──────────────────────────────────────────
+    const incomingPriority = offer.sourcePriority ?? this.sourcePriority
+
+    // 3. Reject points_value > 500,000 unless card is a Bonvoy program
+    if ((offer.points_value ?? 0) > 500_000) {
+      const { data: cardMeta } = await supabaseAdmin
+        .from('credit_cards')
+        .select('rewards_program')
+        .eq('id', card_id)
+        .maybeSingle()
+      if (cardMeta?.rewards_program !== 'Bonvoy') {
+        console.warn(`[${this.name}] SKIP [cap-exceeded] points_value=${offer.points_value} "${hl}" (${offer.card_name})`)
+        return 'skipped'
+      }
+    }
+
+    // 4. Reject value-duplicate: same (card_id, source_priority, points_value, cashback_value)
+    //    already active under a different headline — prevents CPP-inflated dupes sneaking in.
+    //    Same-headline rows are excluded so heartbeat updates are not blocked.
+    const { data: valuePeers } = await supabaseAdmin
+      .from('card_offers')
+      .select('id, headline, points_value, cashback_value')
+      .eq('card_id', card_id)
+      .eq('source_priority', incomingPriority)
+      .eq('is_active', true)
+
+    const isDupe = (valuePeers ?? []).some(r =>
+      r.headline !== hl &&
+      r.points_value   === (offer.points_value   ?? null) &&
+      r.cashback_value === (offer.cashback_value ?? null)
+    )
+    if (isDupe) {
+      console.warn(`[${this.name}] SKIP [value-dupe] "${hl}" matches existing active offer (${offer.card_name})`)
+      return 'skipped'
+    }
+
     // ── Step 3: priority-aware save ─────────────────────────────────────────
     const now = new Date().toISOString()
     // Per-offer overrides (e.g. hardcoded fallback) take precedence over class defaults
-    const incomingPriority = offer.sourcePriority ?? this.sourcePriority
     const incomingVerified = offer.isVerified ?? this.isVerified
     const confidence = this.computeConfidence(incomingPriority, incomingVerified, now)
 
@@ -252,6 +325,7 @@ export abstract class BaseScraper {
             scraped_at: now,
             last_seen_at: now,
             source_priority: incomingPriority,
+            source_name: this.sourceName || null,
             is_verified: incomingVerified,
             confidence_score: confidence,
             is_active: true,
@@ -281,6 +355,7 @@ export abstract class BaseScraper {
           scraped_at: now,
           last_seen_at: now,
           source_priority: incomingPriority,
+          source_name: this.sourceName || null,
           is_verified: incomingVerified,
           confidence_score: confidence,
           is_active: true,
@@ -334,7 +409,9 @@ export abstract class BaseScraper {
 
     if (!issuer) throw new Error(`Issuer not found: ${offer.issuer_slug}`)
 
-    const slug = offer.card_name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    // 5 & 6. Strip "Sponsored", non-ASCII, and asterisks from card name before any DB work
+    const cardName = cleanCardName(offer.card_name)
+    const slug = cardName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
     // ── Fuzzy duplicate check ──────────────────────────────────────────────
     // Aggregators often use shortened names (e.g. "Amex Cobalt") that don't
@@ -344,17 +421,22 @@ export abstract class BaseScraper {
     // 1. Exact slug match — handles most aggregator name variants
     const { data: bySlug } = await supabaseAdmin
       .from('credit_cards')
-      .select('id')
+      .select('id, name')
       .eq('slug', slug)
       .maybeSingle()
-    if (bySlug) return bySlug.id
+    if (bySlug) {
+      if (bySlug.name !== cardName) {
+        console.warn(`[${this.name}] Slug collision: "${cardName}" matches existing "${bySlug.name}" (slug=${slug}), reusing id`)
+      }
+      return bySlug.id
+    }
 
     // 2. Keyword search — strip special chars, take first 3 meaningful words
     const STOP = new Set([
       'card', 'visa', 'from', 'with', 'world', 'elite',
       'infinite', 'mastercard', 'rewards', 'preferred', 'platinum',
     ])
-    const keywords = offer.card_name
+    const keywords = cardName
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
@@ -377,11 +459,11 @@ export abstract class BaseScraper {
       .upsert(
         {
           issuer_id: issuer.id,
-          name: offer.card_name,
+          name: cardName,
           slug,
           card_type: 'visa',
           tier: 'entry',
-          rewards_type: 'points',
+          rewards_type: inferRewardsType(cardName),
           apply_url: offer.apply_url,
           image_url: offer.image_url ?? null,
           is_active: true,

@@ -202,6 +202,7 @@ export class ChurningCanadaScraper extends BaseScraper {
 
   // Community-maintained, manually curated — highest trust tier (priority 1)
   protected sourcePriority = 1
+  protected sourceName     = 'churningcanada'
   protected isVerified     = true
 
   // ── Card resolution ─────────────────────────────────────────────────────

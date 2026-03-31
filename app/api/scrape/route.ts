@@ -10,8 +10,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ChurningCanadaScraper } from '@/scrapers/churningcanada'
-import { AmexScraper } from '@/scrapers/amex'
-import { TDScraper } from '@/scrapers/td'
 import { MintFlyingScraper, PrinceOfTravelScraper } from '@/scrapers/aggregators'
 import { sendAlert } from '@/lib/alert'
 
@@ -30,8 +28,6 @@ export async function POST(req: NextRequest) {
 
   const scrapers = [
     new ChurningCanadaScraper(),
-    new AmexScraper(),
-    new TDScraper(),
     new MintFlyingScraper(),
     new PrinceOfTravelScraper(),
   ]

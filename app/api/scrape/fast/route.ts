@@ -1,13 +1,11 @@
 // app/api/scrape/fast/route.ts
 // POST /api/scrape/fast — fast daily scrape (~30 seconds).
-// Runs: churningcanada (SHA-gated), amex (bank-direct), td (bank-direct).
+// Runs: churningcanada (SHA-gated).
 // Triggered by Vercel cron at 06:00 UTC daily.
 // Protected by Authorization: Bearer {CRON_SECRET}.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ChurningCanadaScraper } from '@/scrapers/churningcanada'
-import { AmexScraper } from '@/scrapers/amex'
-import { TDScraper } from '@/scrapers/td'
 import { sendAlert } from '@/lib/alert'
 
 function checkAuth(req: NextRequest): boolean {
@@ -25,8 +23,6 @@ export async function POST(req: NextRequest) {
 
   const scrapers = [
     new ChurningCanadaScraper(),
-    new AmexScraper(),
-    new TDScraper(),
   ]
 
   for (const scraper of scrapers) {

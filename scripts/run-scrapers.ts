@@ -2,14 +2,10 @@
 // Run this manually to trigger all scrapers: npx ts-node scripts/run-scrapers.ts
 // Or pass a single scraper name: npx ts-node scripts/run-scrapers.ts amex
 
-import { AmexScraper } from '../scrapers/amex'
-import { TDScraper } from '../scrapers/td'
 import { MintFlyingScraper, PrinceOfTravelScraper } from '../scrapers/aggregators'
 import { ChurningCanadaScraper } from '../scrapers/churningcanada'
 
 const SCRAPERS = {
-  amex:           () => new AmexScraper(),
-  td:             () => new TDScraper(),
   churningcanada: () => new ChurningCanadaScraper(),
   mintflying:     () => new MintFlyingScraper(),
   princeoftravel: () => new PrinceOfTravelScraper(),

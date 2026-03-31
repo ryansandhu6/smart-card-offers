@@ -122,6 +122,7 @@ export class MintFlyingScraper extends BaseScraper {
   name = 'mintflying'
   issuerSlug = 'aggregator'
   protected sourcePriority = 4   // aggregator — lowest trust tier
+  protected sourceName     = 'mintflying'
   protected isVerified = false
 
   private readonly SOURCE_URL = 'https://www.mintflying.com/credit-cards'
@@ -448,6 +449,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
   // Priority 1: richest data source — scrapes every card page individually,
   // capturing images, earn-rate multipliers, expiry dates, and full offer breakdowns.
   protected sourcePriority = 2   // curated editorial
+  protected sourceName     = 'princeoftravel'
   protected isVerified = true
 
   private readonly BASE_URL  = 'https://princeoftravel.com'
