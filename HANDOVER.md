@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-03-31 (migrations 011–022: slug fixes, logos, tags, content generation, scraper cleanup, cross-validation, p2 fix)
+> Last updated: 2026-03-31 (migrations 011–025: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -1098,28 +1098,33 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 
 ### Completed (2026-03-31)
 
-| Item | Notes |
-|---|---|
-| Admin dashboard | `/admin` — cookie-auth, dashboard + cards + offers + scrapers pages |
-| Offer history / price tracking | `offer_history` table + backfill complete |
-| Cross-validation cleanup | Migration 022: 27 bad offers deactivated (wrong-card, p3 leaks, $undefined, pre-merge originals) |
-| p2/p4 scraper CPP bug | MintFlying no longer uses `signupBonusValue` (dollar value); PoT now uses max-value bullet not first-match |
-| Source priority system | Correctly set: p1=churningcanada, p2=princeoftravel, p4=mintflying; p3 bank-direct scrapers deleted |
-| Migration 021 | `source_name` column added — **apply DDL in Supabase SQL editor**: `ALTER TABLE card_offers ADD COLUMN IF NOT EXISTS source_name TEXT;` |
+| Item | Migration | Notes |
+|---|---|---|
+| Admin dashboard | — | `/admin` — cookie-auth, dashboard + cards + offers + scrapers pages |
+| Offer history / price tracking | — | `offer_history` table + backfill complete |
+| Cross-validation cleanup | 022 | 27 bad offers deactivated (wrong-card, p3 leaks, $undefined, pre-merge originals) |
+| p2/p4 scraper CPP bug fix | — | MintFlying drops `signupBonusValue`; PoT uses max-value bullet not first-match |
+| Source priority system | — | p1=churningcanada, p2=princeoftravel, p4=mintflying; p3 bank-direct deleted |
+| source_name column | 021 | **DDL still needs Supabase SQL editor**: `ALTER TABLE card_offers ADD COLUMN IF NOT EXISTS source_name TEXT;` |
+| Offer description backfill | — | `scripts/cleanup-offer-descriptions.ts` — 82 offers filled; 0 null `details` remaining |
+| Referral URL + admin content edit | 023 | `referral_url` + `short_description` editable from `/admin/cards` |
+| Offer review queue | 024 | New/changed scraped offers → `pending_review` before going live; `/admin/review` page with Activate/Trash/Keep Existing |
+| Dashboard improvements | — | Pending review count, data quality %, cards-with-no-offers table |
+| Duplicate card merge | 025 | 9 same-product duplicates merged; **82 active cards** (was 91), **105 active offers** |
+
+**As of 2026-03-31:** 82 active cards · 105 active offers · migrations 011–025 applied
 
 ### Next up
 
 | Item | Priority | Notes |
 |---|---|---|
-| Referral / affiliate URLs | High | `referral_url` column exists on `credit_cards` — wire up tracking and display |
-| Admin UI content editing | High | Edit card fields (short_description, pros/cons, tags, annual_fee) from `/admin/cards` |
-| Offer description cleanup | Medium | "(merged)" suffix in some headlines; stale p2 CPP values will self-correct on next scraper run |
 | `/api/issuers` endpoint | Low | List all issuers for filter UI |
 | Double opt-in for newsletter | Medium | `is_confirmed` column exists but confirmation flow not wired |
 | Card comparison endpoint | Medium | Compare 2–3 cards side by side |
 | Search endpoint | Medium | Full-text search across card names and offer headlines |
 | Pagination total count | Medium | `/api/cards` and `/api/offers` return `count` as page count, not total rows |
-| Auto content generation | Low | After card insert, auto-run AI content generation for cards missing `short_description` |
+| Auto content generation | Low | After card insert, auto-run AI content for cards missing `short_description` |
+| Stub card enrichment | Medium | 5+ cards (National Bank, Desjardins, CIBC Aerogold, Scotia Platinum Amex) have no `short_description`, `pros`, `cons` |
 
 ### Known data quality issues
 
