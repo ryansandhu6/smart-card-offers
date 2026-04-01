@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-03-31 (migrations 011–025: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge)
+> Last updated: 2026-03-31 (migrations 011–025 fully applied: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -1105,14 +1105,14 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 | Cross-validation cleanup | 022 | 27 bad offers deactivated (wrong-card, p3 leaks, $undefined, pre-merge originals) |
 | p2/p4 scraper CPP bug fix | — | MintFlying drops `signupBonusValue`; PoT uses max-value bullet not first-match |
 | Source priority system | — | p1=churningcanada, p2=princeoftravel, p4=mintflying; p3 bank-direct deleted |
-| source_name column | 021 | **DDL still needs Supabase SQL editor**: `ALTER TABLE card_offers ADD COLUMN IF NOT EXISTS source_name TEXT;` |
+| source_name column | 021 | `source_name TEXT` column on `card_offers`; applied |
 | Offer description backfill | — | `scripts/cleanup-offer-descriptions.ts` — 82 offers filled; 0 null `details` remaining |
 | Referral URL + admin content edit | 023 | `referral_url` + `short_description` editable from `/admin/cards` |
-| Offer review queue | 024 | New/changed scraped offers → `pending_review` before going live; `/admin/review` page with Activate/Trash/Keep Existing |
-| Dashboard improvements | — | Pending review count, data quality %, cards-with-no-offers table |
+| Offer review queue | 024 | `review_status` column on `card_offers`; new/changed scraped offers → `pending_review` before going live; `/admin/review` page with Activate/Trash/Keep Existing; applied |
 | Duplicate card merge | 025 | 9 same-product duplicates merged; **82 active cards** (was 91), **105 active offers** |
+| Dashboard improvements | — | Pending review count, data quality %, scraper list (churningcanada/princeoftravel/mintflying only), "Cards Needing Attention" table (flags missing description, no offers, zero-value offers, $undefined headlines, no referral URL) |
 
-**As of 2026-03-31:** 82 active cards · 105 active offers · migrations 011–025 applied
+**As of 2026-03-31:** 82 active cards · 105 active offers · migrations 011–025 applied · all DDL applied
 
 ### Next up
 
