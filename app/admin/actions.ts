@@ -168,21 +168,42 @@ export async function deactivateOffer(id: string) {
 // ── Review queue ──────────────────────────────────────────────────────────────
 
 export async function sendCardToReview(cardId: string): Promise<{ success: boolean; error?: string }> {
-  // Mark all active offers as pending_review
-  const { error: e1 } = await supabaseAdmin
+  // Check if card has any offers at all
+  const { data: existingOffers } = await supabaseAdmin
     .from('card_offers')
-    .update({ review_status: 'pending_review' })
+    .select('id')
     .eq('card_id', cardId)
-    .eq('is_active', true)
-  if (e1) return { success: false, error: e1.message }
+    .limit(1)
 
-  // Also pull any already-pending offers (review_status=pending_review, is_active=false) back in
-  const { error: e2 } = await supabaseAdmin
-    .from('card_offers')
-    .update({ review_status: 'pending_review' })
-    .eq('card_id', cardId)
-    .eq('review_status', 'pending_review')
-  if (e2) return { success: false, error: e2.message }
+  if (!existingOffers || existingOffers.length === 0) {
+    // No offers exist — insert a blank placeholder so card appears in review queue
+    const { error: insertError } = await supabaseAdmin
+      .from('card_offers')
+      .insert({
+        card_id: cardId,
+        headline: 'New offer — please fill in details',
+        offer_type: 'welcome_bonus',
+        points_value: null,
+        cashback_value: null,
+        spend_requirement: null,
+        is_active: false,
+        is_limited_time: false,
+        review_status: 'pending_review',
+        source_name: 'manual',
+        source_priority: 9,
+        is_verified: false,
+        is_better_than_usual: false,
+        scraped_at: new Date().toISOString(),
+      })
+    if (insertError) return { success: false, error: insertError.message }
+  } else {
+    // Mark ALL offers (active or not) as pending_review
+    const { error } = await supabaseAdmin
+      .from('card_offers')
+      .update({ review_status: 'pending_review' })
+      .eq('card_id', cardId)
+    if (error) return { success: false, error: error.message }
+  }
 
   revalidatePath('/admin/review')
   revalidatePath('/admin')
