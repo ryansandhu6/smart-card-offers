@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-03-31 (migrations 011–025 fully applied: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements)
+> Last updated: 2026-03-31 (migrations 011–026: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -1111,20 +1111,24 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 | Offer review queue | 024 | `review_status` column on `card_offers`; new/changed scraped offers → `pending_review` before going live; `/admin/review` page with Activate/Trash/Keep Existing; applied |
 | Duplicate card merge | 025 | 9 same-product duplicates merged; **82 active cards** (was 91), **105 active offers** |
 | Dashboard improvements | — | Pending review count, data quality %, scraper list (churningcanada/princeoftravel/mintflying only), "Cards Needing Attention" table (flags missing description, no offers, zero-value offers, $undefined headlines, no referral URL) |
+| Source labels in admin UI | — | `lib/sources.ts` — CC/PT/MF badges with tooltips replace raw p1/p2/p4 numbers everywhere |
+| AI card description backfill | — | `scripts/ai-fill-descriptions.ts` — 11 remaining cards filled via Claude; 0 missing `short_description` |
+| Scraper Vercel reliability | — | `maxDuration = 300` on all 3 scrape routes; PoT delay 2s→0.5s; stealthFetch jitter 1–3s→0.2–0.8s |
+| Final audit cleanup | 026 | 6 junk/duplicate/CPP-bug offers deactivated: stale p1 Aeroplan duplicates, Marriott CPP artifact, SimplyCash wrong field |
 
-**As of 2026-03-31:** 82 active cards · 105 active offers · migrations 011–025 applied · all DDL applied
+**As of 2026-03-31:** 82 active cards · **99 active offers** · migrations 011–026 applied · all systems go
 
-### Next up
+### Next session
 
 | Item | Priority | Notes |
 |---|---|---|
+| Add referral URLs | High | Fill `referral_url` on cards via `/admin/cards` edit form; use for affiliate tracking |
+| Run scrapers + review queue test | High | Trigger all 3 scrapers from `/admin/scrapers`, then review queue at `/admin/review` |
 | `/api/issuers` endpoint | Low | List all issuers for filter UI |
 | Double opt-in for newsletter | Medium | `is_confirmed` column exists but confirmation flow not wired |
 | Card comparison endpoint | Medium | Compare 2–3 cards side by side |
 | Search endpoint | Medium | Full-text search across card names and offer headlines |
 | Pagination total count | Medium | `/api/cards` and `/api/offers` return `count` as page count, not total rows |
-| Auto content generation | Low | After card insert, auto-run AI content for cards missing `short_description` |
-| Stub card enrichment | Medium | 5+ cards (National Bank, Desjardins, CIBC Aerogold, Scotia Platinum Amex) have no `short_description`, `pros`, `cons` |
 
 ### Known data quality issues
 
@@ -1133,7 +1137,7 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 | Aggregator card names don't always match seeded names | Stub cards created | `ensureCard()` fuzzy matching handles most; seed data enriches stubs over time |
 | `spend_timeframe_days` often null for aggregator offers | Missing in display | Fall back to showing just the spend amount without timeframe |
 | `cashback_value` is a percentage, not a dollar amount | Calculation errors | See [Section 8](#8-data-quality-notes) |
-| Prince of Travel scraper takes ~3 min | Long Vercel cron runtime | PoT visits card pages × 2s delay; the daily cron has a 10-min timeout — acceptable, but monitor |
+| Prince of Travel scraper takes ~2 min | Vercel cron runtime | PoT visits ~100 card pages; delay reduced to 0.5s + jitter 0.2–0.8s; fits in 300s |
 | `blog_posts.content_mdx` not exposed via API | Can't render blog posts | Query Supabase directly with the public anon key for individual post content |
 
 ---
