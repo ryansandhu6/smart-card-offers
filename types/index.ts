@@ -3,7 +3,7 @@
 export type CardTier = 'no-fee' | 'entry' | 'mid' | 'premium' | 'super-premium'
 export type CardType = 'visa' | 'mastercard' | 'amex' | 'discover'
 export type RewardsType = 'points' | 'cashback' | 'hybrid'
-export type OfferType = 'welcome_bonus' | 'additional_offer' | 'limited_time' | 'retention' | 'referral'
+export type OfferType = 'welcome_bonus' | 'additional_offer' | 'referral'
 export type RateType = 'fixed' | 'variable' | 'hybrid'
 export type CreditScore = 'fair' | 'good' | 'very-good' | 'excellent'
 

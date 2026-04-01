@@ -15,10 +15,11 @@ type Card = {
   tier: string
   is_active: boolean
   rewards_type: string
+  annual_fee: number
+  annual_fee_waived_first_year: boolean
   short_description: string | null
   referral_url: string | null
   image_url: string | null
-  has_fyf: boolean
   issuer: { name: string } | null
 }
 
@@ -39,7 +40,7 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
       )
     : cards
 
-  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) {
+  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) {
     setError(null)
     startTrans(async () => {
       try {
@@ -215,7 +216,7 @@ function ViewRow({
           <div>
             <div className="font-medium">
               {card.name}
-              {card.has_fyf && (
+              {card.annual_fee_waived_first_year && (
                 <span className="text-xs bg-green-100 text-green-700 rounded px-1.5 py-0.5 inline-block ml-2">FYF</span>
               )}
             </div>
@@ -280,15 +281,16 @@ function EditRow({
 }: {
   card: Card
   isPending: boolean
-  onSave: (draft: { name: string; tier: string; is_active: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) => void
+  onSave: (draft: { name: string; tier: string; is_active: boolean; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) => void
   onCancel: () => void
 }) {
-  const [name, setName]                       = useState(card.name)
-  const [tier, setTier]                       = useState(card.tier)
-  const [is_active, setIsActive]              = useState(card.is_active)
-  const [short_description, setShortDesc]     = useState(card.short_description ?? '')
-  const [referral_url, setReferralUrl]        = useState(card.referral_url ?? '')
-  const [image_url, setImageUrl]              = useState(card.image_url ?? '')
+  const [name, setName]                                       = useState(card.name)
+  const [tier, setTier]                                       = useState(card.tier)
+  const [is_active, setIsActive]                              = useState(card.is_active)
+  const [annual_fee_waived_first_year, setFyfWaived]          = useState(card.annual_fee_waived_first_year)
+  const [short_description, setShortDesc]                     = useState(card.short_description ?? '')
+  const [referral_url, setReferralUrl]                        = useState(card.referral_url ?? '')
+  const [image_url, setImageUrl]                              = useState(card.image_url ?? '')
 
   return (
     <>
@@ -324,7 +326,7 @@ function EditRow({
         <td className="px-4 py-2.5 space-x-2">
           <button
             onClick={() => onSave({
-              name, tier, is_active,
+              name, tier, is_active, annual_fee_waived_first_year,
               short_description: short_description.trim() || null,
               referral_url: referral_url.trim() || null,
               image_url: image_url.trim() || null,
@@ -374,6 +376,17 @@ function EditRow({
               placeholder="https://…"
               className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={annual_fee_waived_first_year}
+                onChange={e => setFyfWaived(e.target.checked)}
+                className="h-4 w-4"
+              />
+              Annual fee waived first year (FYF)
+            </label>
           </div>
         </td>
       </tr>

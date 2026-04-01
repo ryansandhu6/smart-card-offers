@@ -60,6 +60,7 @@ export async function updateCard(
     name: string
     tier: string
     is_active: boolean
+    annual_fee_waived_first_year: boolean
     short_description: string | null
     referral_url: string | null
     image_url: string | null
@@ -118,6 +119,8 @@ export async function createOffer(data: {
   spend_requirement: number | null
   source_name: string
   source_priority: number
+  is_limited_time: boolean
+  expires_at: string | null
 }) {
   const { error } = await supabaseAdmin
     .from('card_offers')
@@ -139,6 +142,8 @@ export async function updateOffer(
     cashback_value: number | null
     spend_requirement: number | null
     is_active: boolean
+    is_limited_time: boolean
+    expires_at: string | null
   }
 ) {
   const { error } = await supabaseAdmin

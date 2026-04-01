@@ -462,7 +462,7 @@ export class ChurningCanadaScraper extends BaseScraper {
         _card_id:          card_id,   // pre-resolved — BaseScraper skips card lookup
         card_name:         row.cardName,
         issuer_slug:       issuerSlug,
-        offer_type:        expires_at ? 'limited_time' : 'welcome_bonus',
+        offer_type:        'welcome_bonus',
         headline,
         points_value:      isCashback ? undefined : parsePoints(bonus),
         cashback_value:    isCashback ? parseCashbackPct(bonus) : undefined,

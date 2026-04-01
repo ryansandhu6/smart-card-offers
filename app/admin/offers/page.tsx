@@ -10,6 +10,7 @@ export default async function OffersPage() {
       .select(`
         id, headline, points_value, cashback_value, spend_requirement,
         is_active, offer_type, source_priority, source_name,
+        is_limited_time, expires_at,
         card:credit_cards ( name, slug )
       `)
       .order('is_active', { ascending: false })
@@ -29,6 +30,7 @@ export default async function OffersPage() {
     cashback_value: number | null; spend_requirement: number | null
     is_active: boolean; offer_type: string
     source_priority: number | null; source_name: string | null
+    is_limited_time: boolean; expires_at: string | null
     card: { name: string; slug: string } | null
   }
   const rows = (offers ?? []).map(o => ({

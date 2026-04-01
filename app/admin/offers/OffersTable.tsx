@@ -21,6 +21,8 @@ type Offer = {
   offer_type: string
   source_priority: number | null
   source_name: string | null
+  is_limited_time: boolean
+  expires_at: string | null
   card: { name: string; slug: string } | null
 }
 
@@ -50,6 +52,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
     card_id: string; headline: string; offer_type: string
     points_value: number | null; cashback_value: number | null
     spend_requirement: number | null; source_name: string; source_priority: number
+    is_limited_time: boolean; expires_at: string | null
   }) {
     setError(null)
     startTrans(async () => {
@@ -65,7 +68,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
 
   async function handleSave(
     offer: Offer,
-    draft: { headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; is_active: boolean }
+    draft: { headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; is_active: boolean; is_limited_time: boolean; expires_at: string | null }
   ) {
     setError(null)
     startTrans(async () => {
@@ -143,6 +146,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
               <th className="px-4 py-2 text-right">Points</th>
               <th className="px-4 py-2 text-right">Cash</th>
               <th className="px-4 py-2 text-left">Source</th>
+              <th className="px-4 py-2 text-left">Ltd.</th>
               <th className="px-4 py-2 text-left">Active</th>
               <th className="px-4 py-2 text-left">Actions</th>
             </tr>
@@ -166,7 +170,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
                   />
             )}
             {visible.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">No offers found</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">No offers found</td></tr>
             )}
           </tbody>
         </table>
@@ -206,6 +210,13 @@ function ViewRow({
         <SourceBadge priority={offer.source_priority} />
       </td>
       <td className="px-4 py-2.5">
+        {offer.is_limited_time && (
+          <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+            {offer.expires_at ? new Date(offer.expires_at).toLocaleDateString('en-CA') : 'Ltd.'}
+          </span>
+        )}
+      </td>
+      <td className="px-4 py-2.5">
         <span className={`inline-block h-2 w-2 rounded-full ${offer.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
       </td>
       <td className="px-4 py-2.5 space-x-2 whitespace-nowrap">
@@ -232,22 +243,24 @@ function ViewRow({
 
 // ── Edit row ──────────────────────────────────────────────────────────────────
 
-const OFFER_TYPES = ['welcome_bonus', 'additional_offer', 'limited_time', 'retention'] as const
+const OFFER_TYPES = ['welcome_bonus', 'additional_offer', 'referral'] as const
 
 function EditRow({
   offer, isPending, onSave, onCancel,
 }: {
   offer: Offer
   isPending: boolean
-  onSave: (draft: { headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; is_active: boolean }) => void
+  onSave: (draft: { headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; is_active: boolean; is_limited_time: boolean; expires_at: string | null }) => void
   onCancel: () => void
 }) {
-  const [headline,         setHeadline]        = useState(offer.headline ?? '')
-  const [offer_type,       setOfferType]        = useState(offer.offer_type)
-  const [points_value,     setPointsValue]      = useState(offer.points_value?.toString() ?? '')
-  const [cashback_value,   setCashbackValue]    = useState(offer.cashback_value?.toString() ?? '')
-  const [spend_requirement, setSpendRequirement] = useState(offer.spend_requirement?.toString() ?? '')
-  const [is_active,        setIsActive]         = useState(offer.is_active)
+  const [headline,          setHeadline]         = useState(offer.headline ?? '')
+  const [offer_type,        setOfferType]         = useState(offer.offer_type)
+  const [points_value,      setPointsValue]       = useState(offer.points_value?.toString() ?? '')
+  const [cashback_value,    setCashbackValue]     = useState(offer.cashback_value?.toString() ?? '')
+  const [spend_requirement, setSpendRequirement]  = useState(offer.spend_requirement?.toString() ?? '')
+  const [is_active,         setIsActive]          = useState(offer.is_active)
+  const [is_limited_time,   setIsLimitedTime]     = useState(offer.is_limited_time)
+  const [expires_at,        setExpiresAt]         = useState(offer.expires_at?.slice(0, 10) ?? '')
 
   function handleSave() {
     onSave({
@@ -257,6 +270,8 @@ function EditRow({
       cashback_value:   cashback_value   ? Number(cashback_value)   : null,
       spend_requirement: spend_requirement ? Number(spend_requirement) : null,
       is_active,
+      is_limited_time,
+      expires_at: expires_at || null,
     })
   }
 
@@ -311,6 +326,25 @@ function EditRow({
       <td className="px-4 py-2.5">
         <SourceBadge priority={offer.source_priority} />
       </td>
+      <td className="px-4 py-2.5 space-y-1">
+        <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={is_limited_time}
+            onChange={e => setIsLimitedTime(e.target.checked)}
+            className="h-3.5 w-3.5"
+          />
+          Ltd.
+        </label>
+        {is_limited_time && (
+          <input
+            type="date"
+            value={expires_at}
+            onChange={e => setExpiresAt(e.target.value)}
+            className="border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        )}
+      </td>
       <td className="px-4 py-2.5">
         <input
           type="checkbox"
@@ -341,7 +375,7 @@ function EditRow({
 
 // ── Add Offer form ────────────────────────────────────────────────────────────
 
-const OFFER_TYPE_OPTIONS = ['welcome_bonus', 'additional_offer', 'limited_time', 'retention'] as const
+const OFFER_TYPE_OPTIONS = ['welcome_bonus', 'additional_offer', 'referral'] as const
 const SOURCE_OPTIONS = ['churningcanada', 'princeoftravel', 'mintflying', 'manual'] as const
 
 function AddOfferForm({
@@ -349,16 +383,18 @@ function AddOfferForm({
 }: {
   cards: CardOption[]
   isPending: boolean
-  onSave: (draft: { card_id: string; headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; source_name: string; source_priority: number }) => void
+  onSave: (draft: { card_id: string; headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; source_name: string; source_priority: number; is_limited_time: boolean; expires_at: string | null }) => void
   onCancel: () => void
 }) {
-  const [card_id,          setCardId]          = useState(cards[0]?.id ?? '')
-  const [headline,         setHeadline]        = useState('')
-  const [offer_type,       setOfferType]       = useState<string>('welcome_bonus')
-  const [points_value,     setPointsValue]     = useState('')
-  const [cashback_value,   setCashbackValue]   = useState('')
+  const [card_id,           setCardId]         = useState(cards[0]?.id ?? '')
+  const [headline,          setHeadline]       = useState('')
+  const [offer_type,        setOfferType]      = useState<string>('welcome_bonus')
+  const [points_value,      setPointsValue]    = useState('')
+  const [cashback_value,    setCashbackValue]  = useState('')
   const [spend_requirement, setSpendReq]       = useState('')
-  const [source_name,      setSourceName]      = useState<string>('manual')
+  const [source_name,       setSourceName]     = useState<string>('manual')
+  const [is_limited_time,   setIsLimitedTime]  = useState(false)
+  const [expires_at,        setExpiresAt]      = useState('')
 
   function handleSave() {
     if (!headline.trim()) return
@@ -371,6 +407,8 @@ function AddOfferForm({
       spend_requirement: spend_requirement ? Number(spend_requirement) : null,
       source_name,
       source_priority: SOURCE_PRIORITY[source_name] ?? 9,
+      is_limited_time,
+      expires_at: expires_at || null,
     })
   }
 
@@ -421,6 +459,28 @@ function AddOfferForm({
         </div>
         <div className="flex items-end">
           <p className="text-xs text-gray-400">priority → {SOURCE_PRIORITY[source_name] ?? 9}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={is_limited_time}
+              onChange={e => setIsLimitedTime(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            Limited time offer
+          </label>
+          {is_limited_time && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Expires</label>
+              <input
+                type="date"
+                value={expires_at}
+                onChange={e => setExpiresAt(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          )}
         </div>
       </div>
       <div className="flex gap-2">

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approveOffer, rejectOffer } from '../actions'
+import { approveOffer, rejectOffer, updateOffer } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 import type { CardGroup, OfferRow } from './page'
 
@@ -72,17 +72,37 @@ function ActiveRow({ offer }: { offer: OfferRow }) {
   )
 }
 
-// ── Pending row (actionable) ──────────────────────────────────────────────────
+// ── Pending row (actionable + inline-editable) ────────────────────────────────
 
 function PendingRow({ offer, hasActive }: { offer: OfferRow; hasActive: boolean }) {
   const [isPending, startTrans] = useTransition()
-  const [done, setDone] = useState<'approved' | 'rejected' | null>(null)
+  const [done, setDone]         = useState<'approved' | 'rejected' | null>(null)
+  const [editing, setEditing]   = useState(false)
+  const [headline, setHeadline] = useState(offer.headline)
+  const [points, setPoints]     = useState(offer.points_value?.toString() ?? '')
+  const [cash, setCash]         = useState(offer.cashback_value?.toString() ?? '')
   const router = useRouter()
 
   function act(action: () => Promise<void>) {
     startTrans(async () => {
       await action()
       router.refresh()
+    })
+  }
+
+  function handleSaveChanges() {
+    act(async () => {
+      await updateOffer(offer.id, {
+        headline,
+        offer_type: offer.offer_type,
+        points_value: points ? Number(points) : null,
+        cashback_value: cash ? Number(cash) : null,
+        spend_requirement: offer.spend_requirement,
+        is_active: offer.is_active,
+        is_limited_time: offer.is_limited_time,
+        expires_at: offer.expires_at,
+      })
+      setEditing(false)
     })
   }
 
@@ -104,36 +124,92 @@ function PendingRow({ offer, hasActive }: { offer: OfferRow; hasActive: boolean 
   return (
     <tr className="bg-amber-50">
       <td className="px-4 py-2.5"><SourceBadge priority={offer.source_priority} /></td>
-      <td className="px-4 py-2.5 tabular-nums font-medium whitespace-nowrap">{formatValue(offer)}</td>
-      <td className="px-4 py-2.5 max-w-xs">{offer.headline}</td>
+      <td className="px-4 py-2.5 tabular-nums font-medium whitespace-nowrap">
+        {editing ? (
+          <div className="space-y-1">
+            <input
+              type="number"
+              value={points}
+              onChange={e => setPoints(e.target.value)}
+              placeholder="pts"
+              className="w-24 border border-amber-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-400"
+            />
+            <input
+              type="number"
+              step="0.01"
+              value={cash}
+              onChange={e => setCash(e.target.value)}
+              placeholder="cash"
+              className="w-24 border border-amber-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-400"
+            />
+          </div>
+        ) : formatValue(offer)}
+      </td>
+      <td className="px-4 py-2.5 max-w-xs">
+        {editing ? (
+          <input
+            value={headline}
+            onChange={e => setHeadline(e.target.value)}
+            className="w-full border border-amber-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+          />
+        ) : offer.headline}
+      </td>
       <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">{fmtDate(offer.scraped_at)}</td>
       <td className="px-4 py-2.5">
         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">pending</span>
       </td>
       <td className="px-4 py-2.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => act(async () => { await approveOffer(offer.id); setDone('approved') })}
-            disabled={isPending}
-            className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 disabled:opacity-40"
-          >
-            Activate
-          </button>
-          <button
-            onClick={() => act(async () => { await rejectOffer(offer.id); setDone('rejected') })}
-            disabled={isPending}
-            className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 disabled:opacity-40"
-          >
-            Trash
-          </button>
-          {hasActive && (
-            <button
-              onClick={() => act(async () => { await rejectOffer(offer.id); setDone('rejected') })}
-              disabled={isPending}
-              className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded hover:bg-gray-300 disabled:opacity-40"
-            >
-              Keep Existing
-            </button>
+          {editing ? (
+            <>
+              <button
+                onClick={handleSaveChanges}
+                disabled={isPending}
+                className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 disabled:opacity-40"
+              >
+                {isPending ? 'Saving…' : 'Save Changes'}
+              </button>
+              <button
+                onClick={() => setEditing(false)}
+                disabled={isPending}
+                className="text-xs text-gray-500 hover:underline disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setEditing(true)}
+                disabled={isPending}
+                className="text-xs text-blue-600 hover:underline disabled:opacity-40"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => act(async () => { await approveOffer(offer.id); setDone('approved') })}
+                disabled={isPending}
+                className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 disabled:opacity-40"
+              >
+                Activate
+              </button>
+              <button
+                onClick={() => act(async () => { await rejectOffer(offer.id); setDone('rejected') })}
+                disabled={isPending}
+                className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 disabled:opacity-40"
+              >
+                Trash
+              </button>
+              {hasActive && (
+                <button
+                  onClick={() => act(async () => { await rejectOffer(offer.id); setDone('rejected') })}
+                  disabled={isPending}
+                  className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded hover:bg-gray-300 disabled:opacity-40"
+                >
+                  Keep Existing
+                </button>
+              )}
+            </>
           )}
         </div>
       </td>

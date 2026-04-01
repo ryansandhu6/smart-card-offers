@@ -9,6 +9,10 @@ export type OfferRow = {
   headline: string
   points_value: number | null
   cashback_value: number | null
+  spend_requirement: number | null
+  offer_type: string
+  is_limited_time: boolean
+  expires_at: string | null
   source_priority: number
   source_name: string | null
   review_status: string
@@ -28,7 +32,7 @@ export default async function ReviewPage() {
   // Fetch all pending offers with card info
   const { data: pendingRaw, error: e1 } = await supabaseAdmin
     .from('card_offers')
-    .select('id, card_id, headline, points_value, cashback_value, source_priority, source_name, review_status, is_active, scraped_at, credit_cards!inner(name, slug)')
+    .select('id, card_id, headline, points_value, cashback_value, spend_requirement, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at, credit_cards!inner(name, slug)')
     .eq('review_status', 'pending_review')
     .order('scraped_at', { ascending: false })
 
@@ -40,7 +44,7 @@ export default async function ReviewPage() {
   const { data: activeRaw } = pendingCardIds.length
     ? await supabaseAdmin
         .from('card_offers')
-        .select('id, card_id, headline, points_value, cashback_value, source_priority, source_name, review_status, is_active, scraped_at')
+        .select('id, card_id, headline, points_value, cashback_value, spend_requirement, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at')
         .eq('is_active', true)
         .in('card_id', pendingCardIds)
     : { data: [] }
