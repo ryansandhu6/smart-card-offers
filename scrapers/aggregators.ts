@@ -258,10 +258,9 @@ export class MintFlyingScraper extends BaseScraper {
     if (!headline || !cardName) return null
 
     const issuer_slug = resolveIssuer(String(card.issuer ?? card.brand ?? ''))
-    const points_value: number | undefined =
-      typeof card.signupBonusValue === 'number'
-        ? card.signupBonusValue
-        : this.parsePoints(headline)
+    // Never use signupBonusValue — MintFlying populates it with a CPP dollar
+    // value (e.g. 900 = $900), not a raw points count. Always parse from headline.
+    const points_value: number | undefined = this.parsePoints(headline)
 
     const periodDays = this.parsePeriod(String(card.minSpendPeriod ?? ''))
     const spendFromText = this.parseSpend(headline)
@@ -643,8 +642,14 @@ export class PrinceOfTravelScraper extends BaseScraper {
     }
 
     // ── Parse values out of bullet points ────────────────────────────────
+    // Use the MAXIMUM parsed points value across all bullets — the welcome bonus
+    // is always the largest number. Taking the first match risks picking up a
+    // CPP dollar-value sentence or a small per-month/anniversary earn-rate item
+    // that appears earlier in the DOM than the main bonus headline.
+    let maxPoints: number | undefined
     for (const bullet of bulletPoints) {
-      if (!points_value) points_value = this.parsePoints(bullet)
+      const v = this.parsePoints(bullet)
+      if (v != null && (maxPoints == null || v > maxPoints)) maxPoints = v
       if (!spend_requirement) {
         const s = this.parseSpend(bullet)
         if (s) { spend_requirement = s.amount; spend_timeframe_days = s.days }
@@ -653,6 +658,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
         expires_at = this.parseExpiry(bullet)
       }
     }
+    points_value = maxPoints
 
     // Build headline: first meaningful bullet, or the value from the label span
     if (!headline) {
