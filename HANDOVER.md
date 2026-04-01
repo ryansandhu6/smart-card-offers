@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-03-26 (migrations 011–018: slug fixes, logos, tags, AI content generation, audit cleanup)
+> Last updated: 2026-03-31 (migrations 011–022: slug fixes, logos, tags, content generation, scraper cleanup, cross-validation, p2 fix)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -73,11 +73,9 @@ smart-card-offers/
 │   ├── supabase.ts                 DB clients + query helpers
 │   └── scraper-base.ts             BaseScraper + BaseMortgageScraper
 ├── scrapers/
-│   ├── amex.ts                     American Express scraper (active)
-│   ├── td.ts                       TD Bank scraper (active)
-│   ├── churningcanada.ts           r/churningcanada GitHub README (active)
-│   ├── aggregators.ts              MintFlying, PrinceOfTravel (active)
-│   ├── banks.ts                    Scotiabank, BMO, RBC, CIBC (inactive — kept for future use)
+│   ├── churningcanada.ts           r/churningcanada GitHub README (active, p1)
+│   ├── aggregators.ts              PrinceOfTravel (p2) + MintFlying (p4) (active)
+│   ├── banks.ts                    Scotiabank, BMO, RBC, CIBC (DELETED — p3 bank-direct removed)
 │   ├── mortgage-rates.ts           Ratehub, BigBank mortgage scrapers (inactive — kept for future use)
 │   └── playwright-scraper.ts       PlaywrightScraper base class (inactive scrapers removed)
 ├── scripts/
@@ -806,16 +804,18 @@ Offers have a `source_priority` (1–3) that determines whose data wins on confl
 
 | Priority | Meaning | Scrapers | Why |
 |---|---|---|---|
-| **1** | Richest / curated | `princeoftravel`, `churningcanada` | PoT visits every card page individually — it captures images, earn-rate multipliers, expiry dates, and full offer breakdowns. ChurningCanada is manually maintained by the community. Neither can be improved by overwriting with shallower data. |
-| **2** | Bank-direct | `amex`, `td` | Straight from the issuer, so offer amounts are accurate. But the data is shallow (no images, no earn rates), so it should not overwrite PoT's richer rows. |
-| **3** | Aggregator | `mintflying` | Third-party listings that aggregate offers from many sources — lower confidence. Never overwrites priority-1 or priority-2 content. |
+| **1** | Community curated | `churningcanada` | Manually maintained GitHub README — very high signal. |
+| **2** | Rich editorial | `princeoftravel` | Visits every card page individually — captures images, earn-rate multipliers, expiry dates, full offer breakdowns. |
+| **3** | Bank-direct | *(deleted)* | `amex.ts`, `td.ts`, `banks.ts` removed — p3 data was lower quality and caused merge conflicts with p1/p2 rows. |
+| **4** | Aggregator | `mintflying` | Third-party listings — lower confidence. Never overwrites p1/p2 content. |
 
 **Rule:** A higher-priority (lower number) source will **always** perform a full overwrite when it encounters an existing lower-priority row. A lower-priority source will only refresh `last_seen_at` and `confidence_score` — it never touches the offer content.
 
 **Example flow:**
-1. `mintflying` (3) runs first → inserts "80,000 Amex MR points" at priority 3
-2. `princeoftravel` (1) runs next → same headline exists at priority 3 → `3 > 1` → **full overwrite** with richer PoT data
-3. `amex` (2) runs → same headline now exists at priority 1 → `1 ≤ 2` → **heartbeat only**, amex data is discarded
+1. `mintflying` (4) runs first → inserts "80,000 Amex MR points" at priority 4
+2. `princeoftravel` (2) runs next → same headline exists at priority 4 → `4 > 2` → **full overwrite** with richer PoT data
+3. `churningcanada` (1) runs → same headline now at priority 2 → `2 > 1` → **full overwrite** with community data
+4. `mintflying` (4) runs again → priority 1 exists → `1 ≤ 4` → **heartbeat only**, mintflying data is discarded
 
 ### Confidence Score (0–100)
 
@@ -840,27 +840,27 @@ After every scraper run, `markStaleOffersInactive()` sets `is_active = false` on
 
 ### Scraper Inventory
 
-**Active scrapers (5):**
+**Active scrapers (3):**
 
-| Scraper | File | Priority | Verified | Offers | Notes |
-|---|---|---|---|---|---|
-| `princeoftravel` | `scrapers/aggregators.ts` | **1** | ✅ | ~97 | Visits all 102 card pages — saves images, earn rates, expiry dates |
-| `churningcanada` | `scrapers/churningcanada.ts` | **1** | ✅ | ~33 | SHA-gated GitHub README parser |
-| `amex` | `scrapers/amex.ts` | 2 | ✅ | ~6 | Bank-direct — accurate offer amounts, shallow data |
-| `td` | `scrapers/td.ts` | 2 | ✅ | ~1 | Bank-direct — accurate offer amounts, shallow data |
-| `mintflying` | `scrapers/aggregators.ts` | 3 | ❌ | ~65 | Aggregator — JSON-LD → RSC payload → keyword scan |
+| Scraper | File | Priority | Verified | Notes |
+|---|---|---|---|---|
+| `churningcanada` | `scrapers/churningcanada.ts` | **1** | ✅ | SHA-gated GitHub README parser — ~33 offers |
+| `princeoftravel` | `scrapers/aggregators.ts` | **2** | ✅ | Visits all card pages — saves images, earn rates, expiry dates (~3 min) |
+| `mintflying` | `scrapers/aggregators.ts` | **4** | ❌ | Aggregator — JSON-LD → RSC payload → keyword scan |
 
-**Total: ~202 offers across 20 issuers.**
+**Active offers: 126 across 3 sources** (as of migration 022, 2026-03-31).
 
-Prince of Travel is **priority 1 and the primary source for card images and earn-rate multipliers** — it visits every individual card page and writes `image_url` and `earn_rate_multipliers` back to `credit_cards` when those fields are currently NULL. Its richer offer rows can never be overwritten by bank-direct (2) or aggregator (3) scrapers.
+Prince of Travel is **the primary source for card images and earn-rate multipliers** — it visits every individual card page and writes `image_url` and `earn_rate_multipliers` back to `credit_cards` when those fields are currently NULL.
+
+**Deleted scraper files (p3 bank-direct, removed 2026-03-30):**
+`scrapers/amex.ts`, `scrapers/td.ts`, `scrapers/banks.ts` — p3 data was causing merge conflicts and wrong-program mismatches with p1/p2 rows. Offer data for Amex/TD cards is covered by ChurningCanada (p1) and PrinceOfTravel (p2).
 
 **Inactive scraper files (kept for future use):**
 
 | File | Contents |
 |---|---|
-| `scrapers/banks.ts` | Scotiabank, BMO, RBC, CIBC scrapers |
 | `scrapers/mortgage-rates.ts` | Ratehub + BigBank mortgage rate scrapers |
-| `scrapers/playwright-scraper.ts` | `PlaywrightScraper` base class (NationalBank + Tangerine scrapers removed) |
+| `scrapers/playwright-scraper.ts` | `PlaywrightScraper` base class |
 
 ### SHA-Gating (ChurningCanada)
 
@@ -954,11 +954,11 @@ const badge =
 
 | Value | Meaning | Scrapers |
 |---|---|---|
-| `1` | Richest / curated (most reliable) | `princeoftravel`, `churningcanada` |
-| `2` | Bank-direct | `amex`, `td` |
-| `3` | Third-party aggregator | `mintflying` |
+| `1` | Community curated (most reliable) | `churningcanada` |
+| `2` | Rich editorial | `princeoftravel` |
+| `4` | Third-party aggregator | `mintflying` |
 
-Show a small disclaimer like "Source: Third-party aggregator" when `source_priority = 2`.
+Show a small disclaimer like "Source: Third-party aggregator" when `source_priority = 4`.
 
 ### `expires_at` Handling
 
@@ -1072,11 +1072,9 @@ npm run scrape
 ### Run a single scraper
 
 ```bash
-npm run scrape:princeoftravel # Prince of Travel — priority 1, ~97 offers, images, earn rates (~8 min)
-npm run scrape:churningcanada # r/churningcanada — priority 1, SHA-gated, ~33 offers
-npm run scrape:amex           # American Express — priority 2, bank-direct, ~6 offers
-npm run scrape:td             # TD Bank — priority 2, bank-direct, ~1 offer
-npm run scrape:mintflying     # MintFlying — priority 3, aggregator, ~65 offers
+npm run scrape:churningcanada  # r/churningcanada — priority 1, SHA-gated, ~33 offers (~5s)
+npm run scrape:princeoftravel  # Prince of Travel — priority 2, images + earn rates (~3 min)
+npm run scrape:mintflying      # MintFlying — priority 4, aggregator (~1 min)
 ```
 
 ### Seed the database (new setup)
@@ -1098,19 +1096,30 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 
 ## 12. Known Gaps and Future Improvements
 
-### Not yet built
+### Completed (2026-03-31)
+
+| Item | Notes |
+|---|---|
+| Admin dashboard | `/admin` — cookie-auth, dashboard + cards + offers + scrapers pages |
+| Offer history / price tracking | `offer_history` table + backfill complete |
+| Cross-validation cleanup | Migration 022: 27 bad offers deactivated (wrong-card, p3 leaks, $undefined, pre-merge originals) |
+| p2/p4 scraper CPP bug | MintFlying no longer uses `signupBonusValue` (dollar value); PoT now uses max-value bullet not first-match |
+| Source priority system | Correctly set: p1=churningcanada, p2=princeoftravel, p4=mintflying; p3 bank-direct scrapers deleted |
+| Migration 021 | `source_name` column added — **apply DDL in Supabase SQL editor**: `ALTER TABLE card_offers ADD COLUMN IF NOT EXISTS source_name TEXT;` |
+
+### Next up
 
 | Item | Priority | Notes |
 |---|---|---|
-| `/api/cards/[slug]/blog` | Medium | Related blog posts for a card page |
-| `/api/issuers` | Low | List all issuers for filter UI |
+| Referral / affiliate URLs | High | `referral_url` column exists on `credit_cards` — wire up tracking and display |
+| Admin UI content editing | High | Edit card fields (short_description, pros/cons, tags, annual_fee) from `/admin/cards` |
+| Offer description cleanup | Medium | "(merged)" suffix in some headlines; stale p2 CPP values will self-correct on next scraper run |
+| `/api/issuers` endpoint | Low | List all issuers for filter UI |
 | Double opt-in for newsletter | Medium | `is_confirmed` column exists but confirmation flow not wired |
-| Admin dashboard | High | View scrape health, edit cards/offers, manage featured |
 | Card comparison endpoint | Medium | Compare 2–3 cards side by side |
-| Offer history / price tracking | Low | Track how offers change over time |
-| Re-enable bank scrapers | Medium | Scotiabank, BMO, RBC, CIBC scrapers exist in `banks.ts` but are not registered — add back to `run-scrapers.ts` and `route.ts` when needed |
 | Search endpoint | Medium | Full-text search across card names and offer headlines |
-| Pagination total count | Medium | `/api/cards` and `/api/offers` return `count` as page count, not total rows. Add `?count=exact` to Supabase queries for true total. |
+| Pagination total count | Medium | `/api/cards` and `/api/offers` return `count` as page count, not total rows |
+| Auto content generation | Low | After card insert, auto-run AI content generation for cards missing `short_description` |
 
 ### Known data quality issues
 
@@ -1119,7 +1128,7 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 | Aggregator card names don't always match seeded names | Stub cards created | `ensureCard()` fuzzy matching handles most; seed data enriches stubs over time |
 | `spend_timeframe_days` often null for aggregator offers | Missing in display | Fall back to showing just the spend amount without timeframe |
 | `cashback_value` is a percentage, not a dollar amount | Calculation errors | See [Section 8](#8-data-quality-notes) |
-| Prince of Travel scraper takes ~8 min | Long Vercel cron runtime | PoT visits 102 pages × 2s delay; the daily cron has a 10-min timeout — acceptable, but monitor |
+| Prince of Travel scraper takes ~3 min | Long Vercel cron runtime | PoT visits card pages × 2s delay; the daily cron has a 10-min timeout — acceptable, but monitor |
 | `blog_posts.content_mdx` not exposed via API | Can't render blog posts | Query Supabase directly with the public anon key for individual post content |
 
 ---
