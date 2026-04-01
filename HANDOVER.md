@@ -1096,39 +1096,49 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 
 ## 12. Known Gaps and Future Improvements
 
-### Completed (2026-03-31)
+## Current State (as of 2026-04-01)
+- Migrations done: 011–028
+- Active cards: 75 (down from 82, dupes merged)
+- Inactive cards: 32 (kept — have historical offers attached)
+- Active offers: 99
 
-| Item | Migration | Notes |
-|---|---|---|
-| Admin dashboard | — | `/admin` — cookie-auth, dashboard + cards + offers + scrapers pages |
-| Offer history / price tracking | — | `offer_history` table + backfill complete |
-| Cross-validation cleanup | 022 | 27 bad offers deactivated (wrong-card, p3 leaks, $undefined, pre-merge originals) |
-| p2/p4 scraper CPP bug fix | — | MintFlying drops `signupBonusValue`; PoT uses max-value bullet not first-match |
-| Source priority system | — | p1=churningcanada, p2=princeoftravel, p4=mintflying; p3 bank-direct deleted |
-| source_name column | 021 | `source_name TEXT` column on `card_offers`; applied |
-| Offer description backfill | — | `scripts/cleanup-offer-descriptions.ts` — 82 offers filled; 0 null `details` remaining |
-| Referral URL + admin content edit | 023 | `referral_url` + `short_description` editable from `/admin/cards` |
-| Offer review queue | 024 | `review_status` column on `card_offers`; new/changed scraped offers → `pending_review` before going live; `/admin/review` page with Activate/Trash/Keep Existing; applied |
-| Duplicate card merge | 025 | 9 same-product duplicates merged; **82 active cards** (was 91), **105 active offers** |
-| Dashboard improvements | — | Pending review count, data quality %, scraper list (churningcanada/princeoftravel/mintflying only), "Cards Needing Attention" table (flags missing description, no offers, zero-value offers, $undefined headlines, no referral URL) |
-| Source labels in admin UI | — | `lib/sources.ts` — CC/PT/MF badges with tooltips replace raw p1/p2/p4 numbers everywhere |
-| AI card description backfill | — | `scripts/ai-fill-descriptions.ts` — 11 remaining cards filled via Claude; 0 missing `short_description` |
-| Scraper Vercel reliability | — | `maxDuration = 300` on all 3 scrape routes; PoT delay 2s→0.5s; stealthFetch jitter 1–3s→0.2–0.8s |
-| Final audit cleanup | 026 | 6 junk/duplicate/CPP-bug offers deactivated: stale p1 Aeroplan duplicates, Marriott CPP artifact, SimplyCash wrong field |
+## What was done this session
 
-**As of 2026-03-31:** 82 active cards · **99 active offers** · migrations 011–026 applied · all systems go
+### Data cleanup
+- Migration 027: merged Scotia Platinum Amex, Amex Biz Platinum, Amex Green + fixed BMO eclipse sponsored slug
+- Migration 028: merged CIBC Aventura Gold, RBC Avion Platinum, TD Platinum Travel, Amex Gold Rewards + fixed 4 stale scraper alias entries (critical — prevented dupes respawning on next scrape)
+- Deleted 16 inactive cards with zero offers (clean orphan removal)
+- Wiped 74 junk PoT extra_perks rows (HTML table artifacts)
 
-### Next session
+### Public homepage (app/page.tsx)
+- Built from scratch — was a stub
+- 3-column offer display: Welcome Bonus | Additional Offer | Total
+- Value formatting: "60,000 pts" / "2% cash back" in all 3 columns
+- FYF badge shown on card name when extra_perks has 'First year annual fee waived'
 
-| Item | Priority | Notes |
-|---|---|---|
-| Add referral URLs | High | Fill `referral_url` on cards via `/admin/cards` edit form; use for affiliate tracking |
-| Run scrapers + review queue test | High | Trigger all 3 scrapers from `/admin/scrapers`, then review queue at `/admin/review` |
-| `/api/issuers` endpoint | Low | List all issuers for filter UI |
-| Double opt-in for newsletter | Medium | `is_confirmed` column exists but confirmation flow not wired |
-| Card comparison endpoint | Medium | Compare 2–3 cards side by side |
-| Search endpoint | Medium | Full-text search across card names and offer headlines |
-| Pagination total count | Medium | `/api/cards` and `/api/offers` return `count` as page count, not total rows |
+### Admin UI improvements
+- /admin/cards: Add Card form (name, issuer, network, tier, rewards_type, referral_url)
+- /admin/cards: Reactivate + Delete buttons per card row
+- /admin/offers: Add Offer form (card selector, all fields, source auto-sets priority)
+- /admin/offers: offer_type now editable select in EditRow
+- /admin/offers: spend_requirement now editable in EditRow
+- /admin/offers: offer_type label more visible (gray-500)
+
+### Scraper improvements
+- Added additional_offer as valid offer_type in scraper-base.ts
+- Near-dupe detection in ensureCard(): warns + flags pending_review if
+  incoming card name shares 2+ significant words with an existing active card
+
+## Next Session TODO
+1. Run all 3 scrapers from /admin/scrapers
+2. Review pending offers in /admin/review
+3. Add referral URLs per card in /admin/cards
+4. Add FYF detection to PrinceOfTravel scraper (aggregators.ts)
+5. Consider: second source cross-validation for top 10 cards
+6. Future: monetization via referral/affiliate URLs
+
+Then run:
+git add -A && git commit -m "session: dupe merges, public homepage, admin add card/offer, FYF badge, dupe detection" && git push
 
 ### Known data quality issues
 

@@ -459,6 +459,37 @@ export abstract class BaseScraper {
       if (matches?.length) return matches[0].id
     }
 
+    // ── Near-dupe warning ──────────────────────────────────────────────────────
+    // Before creating a new row, check if any active card shares 2+ significant
+    // words with the incoming name. Does not block the insert.
+    {
+      const DUPE_STOP = new Set(['card', 'visa', 'mastercard', 'the', 'of'])
+      const incomingWords = cardName
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 2 && !DUPE_STOP.has(w))
+
+      const { data: activeCards } = await supabaseAdmin
+        .from('credit_cards')
+        .select('name, slug')
+        .eq('is_active', true)
+        .neq('slug', slug)
+
+      for (const existing of activeCards ?? []) {
+        const existingWords = existing.name
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter((w: string) => w.length >= 2 && !DUPE_STOP.has(w))
+        const shared = incomingWords.filter(w => existingWords.includes(w))
+        if (shared.length >= 2) {
+          console.warn(`[${this.name}] DUPE WARNING: '${cardName}' may duplicate '${existing.name}' (${existing.slug})`)
+          break
+        }
+      }
+    }
+
     // 3. No match — create a minimal stub card (will be enriched by seed later)
     const { data, error } = await supabaseAdmin
       .from('credit_cards')

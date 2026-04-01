@@ -1,9 +1,12 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateCard, deactivateCard, reactivateCard, deleteCard } from '../actions'
+import { createCard, updateCard, deactivateCard, reactivateCard, deleteCard } from '../actions'
 
 const TIERS = ['no-fee', 'entry', 'mid', 'premium', 'super-premium'] as const
+const ADD_TIERS    = ['entry', 'mid', 'premium'] as const
+const NETWORKS     = ['visa', 'mastercard', 'amex', 'other'] as const
+const REWARDS_TYPES = ['points', 'cashback'] as const
 
 type Card = {
   id: string
@@ -17,11 +20,14 @@ type Card = {
   issuer: { name: string } | null
 }
 
-export default function CardsTable({ cards }: { cards: Card[] }) {
-  const [editing, setEditing]   = useState<string | null>(null)
-  const [isPending, startTrans] = useTransition()
-  const [error, setError]       = useState<string | null>(null)
-  const [filter, setFilter]     = useState('')
+type Issuer = { id: string; name: string }
+
+export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers: Issuer[] }) {
+  const [editing, setEditing]     = useState<string | null>(null)
+  const [showAdd, setShowAdd]     = useState(false)
+  const [isPending, startTrans]   = useTransition()
+  const [error, setError]         = useState<string | null>(null)
+  const [filter, setFilter]       = useState('')
   const router = useRouter()
 
   const visible = filter
@@ -69,6 +75,22 @@ export default function CardsTable({ cards }: { cards: Card[] }) {
     })
   }
 
+  async function handleCreate(draft: {
+    name: string; issuer_id: string; card_network: string
+    tier: string; rewards_type: string; referral_url: string | null
+  }) {
+    setError(null)
+    startTrans(async () => {
+      try {
+        await createCard(draft)
+        router.refresh()
+        setShowAdd(false)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Create failed')
+      }
+    })
+  }
+
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`Delete "${name}" and all its offers?`)) return
     setError(null)
@@ -85,13 +107,32 @@ export default function CardsTable({ cards }: { cards: Card[] }) {
 
   return (
     <div className="space-y-3">
-      <input
-        type="search"
-        placeholder="Filter by name or slug…"
-        value={filter}
-        onChange={e => setFilter(e.target.value)}
-        className="w-full max-w-sm border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
-      />
+      <div className="flex items-center gap-3">
+        <input
+          type="search"
+          placeholder="Filter by name or slug…"
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          className="w-full max-w-sm border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+        />
+        {!showAdd && (
+          <button
+            onClick={() => setShowAdd(true)}
+            className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 whitespace-nowrap"
+          >
+            + Add Card
+          </button>
+        )}
+      </div>
+
+      {showAdd && (
+        <AddCardForm
+          issuers={issuers}
+          isPending={isPending}
+          onSave={handleCreate}
+          onCancel={() => setShowAdd(false)}
+        />
+      )}
 
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
@@ -302,6 +343,105 @@ function EditRow({
         </td>
       </tr>
     </>
+  )
+}
+
+// ── Add Card form ─────────────────────────────────────────────────────────────
+
+function AddCardForm({
+  issuers, isPending, onSave, onCancel,
+}: {
+  issuers: Issuer[]
+  isPending: boolean
+  onSave: (draft: { name: string; issuer_id: string; card_network: string; tier: string; rewards_type: string; referral_url: string | null }) => void
+  onCancel: () => void
+}) {
+  const [name,         setName]        = useState('')
+  const [issuer_id,    setIssuerId]    = useState(issuers[0]?.id ?? '')
+  const [card_network, setNetwork]     = useState<string>('visa')
+  const [tier,         setTier]        = useState<string>('entry')
+  const [rewards_type, setRewardsType] = useState<string>('points')
+  const [referral_url, setReferralUrl] = useState('')
+
+  function handleSave() {
+    if (!name.trim()) return
+    onSave({
+      name: name.trim(),
+      issuer_id,
+      card_network,
+      tier,
+      rewards_type,
+      referral_url: referral_url.trim() || null,
+    })
+  }
+
+  const inputCls = 'border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400'
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+      <h3 className="text-sm font-medium text-gray-700">New Card</h3>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="col-span-2 sm:col-span-1">
+          <label className="block text-xs text-gray-500 mb-1">Name <span className="text-red-400">*</span></label>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. TD Aeroplan Visa Infinite"
+            className={`w-full ${inputCls}`}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Issuer</label>
+          <select value={issuer_id} onChange={e => setIssuerId(e.target.value)} className={`w-full ${inputCls}`}>
+            {issuers.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Network</label>
+          <select value={card_network} onChange={e => setNetwork(e.target.value)} className={`w-full ${inputCls}`}>
+            {NETWORKS.map(n => <option key={n} value={n}>{n.charAt(0).toUpperCase() + n.slice(1)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Tier</label>
+          <select value={tier} onChange={e => setTier(e.target.value)} className={`w-full ${inputCls}`}>
+            {ADD_TIERS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Rewards type</label>
+          <select value={rewards_type} onChange={e => setRewardsType(e.target.value)} className={`w-full ${inputCls}`}>
+            {REWARDS_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <label className="block text-xs text-gray-500 mb-1">Referral URL (optional)</label>
+          <input
+            type="url"
+            value={referral_url}
+            onChange={e => setReferralUrl(e.target.value)}
+            placeholder="https://…"
+            className={`w-full ${inputCls}`}
+          />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          disabled={isPending || !name.trim()}
+          className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-40"
+        >
+          {isPending ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={isPending}
+          className="text-sm text-gray-500 hover:underline disabled:opacity-40"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   )
 }
 

@@ -14,6 +14,7 @@ type OfferRow = {
   source_priority: number | null
   source_name: string | null
   spend_requirement: number | null
+  extra_perks: string[] | null
 }
 
 type CardRow = {
@@ -54,7 +55,7 @@ async function fetchCards(): Promise<DisplayRow[]> {
       offers:card_offers(
         id, offer_type, headline,
         points_value, cashback_value,
-        source_priority, source_name, spend_requirement
+        source_priority, source_name, spend_requirement, extra_perks
       )
     `)
     .eq('is_active', true)
@@ -100,12 +101,9 @@ function bestOffer(offers: OfferRow[]): OfferRow | null {
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
-function fmtPoints(o: OfferRow | null): string {
-  if (!o) return '—'
-  if (o.points_value != null && o.points_value > 0)
-    return `${o.points_value.toLocaleString('en-CA')} pts`
-  if (o.cashback_value != null && o.cashback_value > 0)
-    return `$${o.cashback_value.toLocaleString('en-CA')} CB`
+function formatValue(points: number | null, cash: number | null): string {
+  if (points && points > 0) return points.toLocaleString('en-CA') + ' pts'
+  if (cash && cash > 0) return cash + '% cash back'
   return '—'
 }
 
@@ -113,10 +111,7 @@ function fmtTotal(welcome: OfferRow | null, additional: OfferRow | null): string
   if (!welcome && !additional) return '—'
   const pts = (welcome?.points_value ?? 0) + (additional?.points_value ?? 0)
   const cb  = (welcome?.cashback_value ?? 0) + (additional?.cashback_value ?? 0)
-  if (pts > 0 && cb > 0) return `${pts.toLocaleString('en-CA')} pts + $${cb} CB`
-  if (pts > 0) return `${pts.toLocaleString('en-CA')} pts`
-  if (cb > 0)  return `$${cb.toLocaleString('en-CA')} CB`
-  return '—'
+  return formatValue(pts || null, cb || null)
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -160,7 +155,12 @@ export default async function HomePage() {
 
                   {/* Card name */}
                   <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">{card.name}</div>
+                    <div className="font-medium text-gray-900">
+                      {card.name}
+                      {card.offers.some(o => o.extra_perks?.includes('First year annual fee waived')) && (
+                        <span className="text-xs bg-green-100 text-green-700 rounded px-1.5 py-0.5 inline-block ml-2">FYF</span>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-400 font-mono">{card.slug}</div>
                   </td>
 
@@ -172,14 +172,14 @@ export default async function HomePage() {
                   {/* Welcome Bonus */}
                   <td className="px-4 py-3 text-right tabular-nums">
                     {welcome ? (
-                      <span title={welcome.headline}>{fmtPoints(welcome)}</span>
+                      <span title={welcome.headline}>{formatValue(welcome.points_value, welcome.cashback_value)}</span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
 
                   {/* Additional Offer */}
                   <td className="px-4 py-3 text-right tabular-nums text-gray-500">
                     {additional ? (
-                      <span title={additional.headline}>{fmtPoints(additional)}</span>
+                      <span title={additional.headline}>{formatValue(additional.points_value, additional.cashback_value)}</span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
 

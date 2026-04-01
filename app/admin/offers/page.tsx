@@ -4,23 +4,30 @@ import OffersTable from './OffersTable'
 export const dynamic = 'force-dynamic'
 
 export default async function OffersPage() {
-  const { data: offers, error } = await supabaseAdmin
-    .from('card_offers')
-    .select(`
-      id, headline, points_value, cashback_value,
-      is_active, offer_type, source_priority, source_name,
-      card:credit_cards ( name, slug )
-    `)
-    .order('is_active', { ascending: false })
-    .order('source_priority', { ascending: true })
-    .order('points_value', { ascending: false, nullsFirst: false })
+  const [{ data: offers, error }, { data: cards }] = await Promise.all([
+    supabaseAdmin
+      .from('card_offers')
+      .select(`
+        id, headline, points_value, cashback_value, spend_requirement,
+        is_active, offer_type, source_priority, source_name,
+        card:credit_cards ( name, slug )
+      `)
+      .order('is_active', { ascending: false })
+      .order('source_priority', { ascending: true })
+      .order('points_value', { ascending: false, nullsFirst: false }),
+    supabaseAdmin
+      .from('credit_cards')
+      .select('id, name, slug')
+      .eq('is_active', true)
+      .order('name'),
+  ])
 
   if (error) return <p className="text-red-600">Failed to load offers: {error.message}</p>
 
-  // Supabase infers joined relations as arrays; normalise to single object
   type OfferRow = {
     id: string; headline: string; points_value: number | null
-    cashback_value: number | null; is_active: boolean; offer_type: string
+    cashback_value: number | null; spend_requirement: number | null
+    is_active: boolean; offer_type: string
     source_priority: number | null; source_name: string | null
     card: { name: string; slug: string } | null
   }
@@ -38,7 +45,7 @@ export default async function OffersPage() {
         <h1 className="text-2xl font-semibold">Offers</h1>
         <span className="text-sm text-gray-500">{active} active · {inactive} inactive</span>
       </div>
-      <OffersTable offers={rows} />
+      <OffersTable offers={rows} cards={cards ?? []} />
     </div>
   )
 }

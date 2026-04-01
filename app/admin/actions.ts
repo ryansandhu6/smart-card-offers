@@ -4,6 +4,54 @@ import { revalidatePath } from 'next/cache'
 
 // ── Cards ────────────────────────────────────────────────────────────────────
 
+export async function createCard(data: {
+  name: string
+  issuer_id: string
+  card_network: string
+  tier: string
+  rewards_type: string
+  referral_url: string | null
+}) {
+  const base = data.name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+
+  const { data: existing } = await supabaseAdmin
+    .from('credit_cards')
+    .select('id')
+    .eq('slug', base)
+    .maybeSingle()
+
+  const slug = existing ? `${base}-2` : base
+
+  const cardType = ['visa', 'mastercard', 'amex'].includes(data.card_network)
+    ? data.card_network
+    : 'visa'
+
+  const { error } = await supabaseAdmin
+    .from('credit_cards')
+    .insert({
+      name: data.name,
+      slug,
+      issuer_id: data.issuer_id,
+      card_type: cardType,
+      card_network: data.card_network,
+      tier: data.tier,
+      rewards_type: data.rewards_type,
+      referral_url: data.referral_url,
+      is_active: true,
+      is_featured: false,
+      annual_fee: 0,
+      lounge_access: false,
+      travel_insurance: false,
+      purchase_protection: false,
+    })
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/cards')
+}
+
 export async function updateCard(
   id: string,
   data: {
@@ -58,12 +106,35 @@ export async function deleteCard(id: string) {
 
 // ── Offers ───────────────────────────────────────────────────────────────────
 
+export async function createOffer(data: {
+  card_id: string
+  headline: string
+  offer_type: string
+  points_value: number | null
+  cashback_value: number | null
+  spend_requirement: number | null
+  source_name: string
+  source_priority: number
+}) {
+  const { error } = await supabaseAdmin
+    .from('card_offers')
+    .insert({
+      ...data,
+      is_active: true,
+      review_status: 'approved',
+    })
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/offers')
+}
+
 export async function updateOffer(
   id: string,
   data: {
     headline: string
+    offer_type: string
     points_value: number | null
     cashback_value: number | null
+    spend_requirement: number | null
     is_active: boolean
   }
 ) {

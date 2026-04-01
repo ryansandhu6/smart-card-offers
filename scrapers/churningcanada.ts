@@ -29,7 +29,7 @@ const CARD_SLUG_ALIASES: Record<string, string> = {
   'amex business platinum':         'amex-biz-platinum',
   'amex platinum':                  'amex-platinum',
   'amex cobalt':                    'amex-cobalt',
-  'amex gold personal':             'amex-gold-rewards',
+  'amex gold personal':             'american-express-gold-rewards-card', // was amex-gold-rewards (deactivated in migration 028)
   'amex marriott personal':         'amex-marriott-pers',
   'amex marriott business':         'amex-marriott-biz',
   'amex aeroplan core':             'american-express-aeroplan-card',   // was amex-aeroplan-core (deactivated in migration 025)
@@ -42,14 +42,14 @@ const CARD_SLUG_ALIASES: Record<string, string> = {
   'bmo viporter we mc':             'bmo-viporter-we-mc',
   // CIBC
   'cibc aventura visa infinite':    'cibc-aventura-visa-infinite',
-  'cibc aventura visa gold':        'cibc-aventura-visa-gold',
+  'cibc aventura visa gold':        'cibc-aventura-gold-visa',           // was cibc-aventura-visa-gold (deactivated in migration 028)
   'cibc dividend visa infinite':    'cibc-dividend-visa-infinite',
   'cibc aeroplan visa infinite':    'cibc-aeroplan-visa-infinite',
   'cibc aeroplan visa privilege':   'cibc-aeroplan-visa-infinite-privilege', // was cibc-aeroplan-visa-privilege (deactivated in migration 025)
   // MBNA
   'mbna rewards we mc':             'mbna-rewards-we-mc',
   // RBC
-  'rbc avion visa platinum':        'rbc-avion-visa-platinum',
+  'rbc avion visa platinum':        'rbc-visa-platinum-avion',           // was rbc-avion-visa-platinum (deactivated in migration 028)
   'rbc avion visa infinite':        'rbc-avion-visa-infinite',
   'rbc westjet we':                 'westjet-rbc-world-elite',
   'rbc british airways visa infinite': 'rbc-british-airways-visa-infinite',
@@ -61,7 +61,7 @@ const CARD_SLUG_ALIASES: Record<string, string> = {
   // TD
   'td fct visa infinite':           'td-first-class-travel',
   'td cashback visa infinite':      'td-cash-back-visa-infinite-card',
-  'td fct visa platinum':           'td-fct-visa-platinum',
+  'td fct visa platinum':           'td-platinum-travel-visa-card',      // was td-fct-visa-platinum (deactivated in migration 028)
   'td aeroplan platinum':           'td-aeroplan-visa-platinum-card',
   'td aeroplan visa infinite':      'td-aeroplan-visa-infinite',
   'td aeroplan visa privilege':     'td-aeroplan-visa-privilege',

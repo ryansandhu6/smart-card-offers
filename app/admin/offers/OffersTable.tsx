@@ -1,14 +1,22 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateOffer, deactivateOffer } from '../actions'
+import { createOffer, updateOffer, deactivateOffer } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
+
+const SOURCE_PRIORITY: Record<string, number> = {
+  churningcanada:  1,
+  princeoftravel:  2,
+  mintflying:      4,
+  manual:          9,
+}
 
 type Offer = {
   id: string
   headline: string
   points_value: number | null
   cashback_value: number | null
+  spend_requirement: number | null
   is_active: boolean
   offer_type: string
   source_priority: number | null
@@ -16,8 +24,11 @@ type Offer = {
   card: { name: string; slug: string } | null
 }
 
-export default function OffersTable({ offers }: { offers: Offer[] }) {
+type CardOption = { id: string; name: string; slug: string }
+
+export default function OffersTable({ offers, cards }: { offers: Offer[]; cards: CardOption[] }) {
   const [editing, setEditing]   = useState<string | null>(null)
+  const [showAdd, setShowAdd]   = useState(false)
   const [isPending, startTrans] = useTransition()
   const [error, setError]       = useState<string | null>(null)
   const [filter, setFilter]     = useState('')
@@ -35,9 +46,26 @@ export default function OffersTable({ offers }: { offers: Offer[] }) {
     )
   })
 
+  async function handleCreate(draft: {
+    card_id: string; headline: string; offer_type: string
+    points_value: number | null; cashback_value: number | null
+    spend_requirement: number | null; source_name: string; source_priority: number
+  }) {
+    setError(null)
+    startTrans(async () => {
+      try {
+        await createOffer(draft)
+        router.refresh()
+        setShowAdd(false)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Create failed')
+      }
+    })
+  }
+
   async function handleSave(
     offer: Offer,
-    draft: { headline: string; points_value: number | null; cashback_value: number | null; is_active: boolean }
+    draft: { headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; is_active: boolean }
   ) {
     setError(null)
     startTrans(async () => {
@@ -83,7 +111,24 @@ export default function OffersTable({ offers }: { offers: Offer[] }) {
           />
           Show inactive
         </label>
+        {!showAdd && (
+          <button
+            onClick={() => setShowAdd(true)}
+            className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 whitespace-nowrap"
+          >
+            + Add Offer
+          </button>
+        )}
       </div>
+
+      {showAdd && (
+        <AddOfferForm
+          cards={cards}
+          isPending={isPending}
+          onSave={handleCreate}
+          onCancel={() => setShowAdd(false)}
+        />
+      )}
 
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
@@ -149,7 +194,7 @@ function ViewRow({
       </td>
       <td className="px-4 py-2.5 max-w-xs">
         <div className="truncate">{offer.headline}</div>
-        <div className="text-xs text-gray-400 mt-0.5">{offer.offer_type}</div>
+        <div className="text-xs text-gray-500 mt-0.5">{offer.offer_type}</div>
       </td>
       <td className="px-4 py-2.5 text-right tabular-nums">
         {offer.points_value != null ? offer.points_value.toLocaleString() : '—'}
@@ -187,24 +232,30 @@ function ViewRow({
 
 // ── Edit row ──────────────────────────────────────────────────────────────────
 
+const OFFER_TYPES = ['welcome_bonus', 'additional_offer', 'limited_time', 'retention'] as const
+
 function EditRow({
   offer, isPending, onSave, onCancel,
 }: {
   offer: Offer
   isPending: boolean
-  onSave: (draft: { headline: string; points_value: number | null; cashback_value: number | null; is_active: boolean }) => void
+  onSave: (draft: { headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; is_active: boolean }) => void
   onCancel: () => void
 }) {
-  const [headline,       setHeadline]      = useState(offer.headline ?? '')
-  const [points_value,   setPointsValue]   = useState(offer.points_value?.toString() ?? '')
-  const [cashback_value, setCashbackValue] = useState(offer.cashback_value?.toString() ?? '')
-  const [is_active,      setIsActive]      = useState(offer.is_active)
+  const [headline,         setHeadline]        = useState(offer.headline ?? '')
+  const [offer_type,       setOfferType]        = useState(offer.offer_type)
+  const [points_value,     setPointsValue]      = useState(offer.points_value?.toString() ?? '')
+  const [cashback_value,   setCashbackValue]    = useState(offer.cashback_value?.toString() ?? '')
+  const [spend_requirement, setSpendRequirement] = useState(offer.spend_requirement?.toString() ?? '')
+  const [is_active,        setIsActive]         = useState(offer.is_active)
 
   function handleSave() {
     onSave({
       headline,
-      points_value:   points_value   ? Number(points_value)   : null,
-      cashback_value: cashback_value ? Number(cashback_value) : null,
+      offer_type,
+      points_value:     points_value     ? Number(points_value)     : null,
+      cashback_value:   cashback_value   ? Number(cashback_value)   : null,
+      spend_requirement: spend_requirement ? Number(spend_requirement) : null,
       is_active,
     })
   }
@@ -221,7 +272,13 @@ function EditRow({
           onChange={e => setHeadline(e.target.value)}
           className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
-        <div className="text-xs text-gray-400 mt-0.5">{offer.offer_type}</div>
+        <select
+          value={offer_type}
+          onChange={e => setOfferType(e.target.value)}
+          className="mt-1 border border-gray-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+        >
+          {OFFER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
       </td>
       <td className="px-4 py-2.5">
         <input
@@ -232,15 +289,24 @@ function EditRow({
           className="w-24 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
       </td>
-      <td className="px-4 py-2.5">
+      <td className="px-4 py-2.5 space-y-1">
         <input
           type="number"
           step="0.01"
           value={cashback_value}
           onChange={e => setCashbackValue(e.target.value)}
-          placeholder="—"
+          placeholder="cash —"
           className="w-20 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
+        <div>
+          <input
+            type="number"
+            value={spend_requirement}
+            onChange={e => setSpendRequirement(e.target.value)}
+            placeholder="spend —"
+            className="w-20 border border-gray-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
       </td>
       <td className="px-4 py-2.5">
         <SourceBadge priority={offer.source_priority} />
@@ -270,6 +336,110 @@ function EditRow({
         </button>
       </td>
     </tr>
+  )
+}
+
+// ── Add Offer form ────────────────────────────────────────────────────────────
+
+const OFFER_TYPE_OPTIONS = ['welcome_bonus', 'additional_offer', 'limited_time', 'retention'] as const
+const SOURCE_OPTIONS = ['churningcanada', 'princeoftravel', 'mintflying', 'manual'] as const
+
+function AddOfferForm({
+  cards, isPending, onSave, onCancel,
+}: {
+  cards: CardOption[]
+  isPending: boolean
+  onSave: (draft: { card_id: string; headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; source_name: string; source_priority: number }) => void
+  onCancel: () => void
+}) {
+  const [card_id,          setCardId]          = useState(cards[0]?.id ?? '')
+  const [headline,         setHeadline]        = useState('')
+  const [offer_type,       setOfferType]       = useState<string>('welcome_bonus')
+  const [points_value,     setPointsValue]     = useState('')
+  const [cashback_value,   setCashbackValue]   = useState('')
+  const [spend_requirement, setSpendReq]       = useState('')
+  const [source_name,      setSourceName]      = useState<string>('manual')
+
+  function handleSave() {
+    if (!headline.trim()) return
+    onSave({
+      card_id,
+      headline: headline.trim(),
+      offer_type,
+      points_value:     points_value     ? Number(points_value)     : null,
+      cashback_value:   cashback_value   ? Number(cashback_value)   : null,
+      spend_requirement: spend_requirement ? Number(spend_requirement) : null,
+      source_name,
+      source_priority: SOURCE_PRIORITY[source_name] ?? 9,
+    })
+  }
+
+  const inputCls = 'border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400'
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+      <h3 className="text-sm font-medium text-gray-700">New Offer</h3>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="col-span-2 sm:col-span-3">
+          <label className="block text-xs text-gray-500 mb-1">Card</label>
+          <select value={card_id} onChange={e => setCardId(e.target.value)} className={`w-full ${inputCls}`}>
+            {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div className="col-span-2 sm:col-span-2">
+          <label className="block text-xs text-gray-500 mb-1">Headline <span className="text-red-400">*</span></label>
+          <input
+            value={headline}
+            onChange={e => setHeadline(e.target.value)}
+            placeholder="e.g. Earn 60,000 points after spending $3,000 in 3 months"
+            className={`w-full ${inputCls}`}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Offer type</label>
+          <select value={offer_type} onChange={e => setOfferType(e.target.value)} className={`w-full ${inputCls}`}>
+            {OFFER_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Points value</label>
+          <input type="number" value={points_value} onChange={e => setPointsValue(e.target.value)} placeholder="—" className={`w-full ${inputCls}`} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Cashback value</label>
+          <input type="number" step="0.01" value={cashback_value} onChange={e => setCashbackValue(e.target.value)} placeholder="—" className={`w-full ${inputCls}`} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Spend requirement</label>
+          <input type="number" value={spend_requirement} onChange={e => setSpendReq(e.target.value)} placeholder="—" className={`w-full ${inputCls}`} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Source</label>
+          <select value={source_name} onChange={e => setSourceName(e.target.value)} className={`w-full ${inputCls}`}>
+            {SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="flex items-end">
+          <p className="text-xs text-gray-400">priority → {SOURCE_PRIORITY[source_name] ?? 9}</p>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          disabled={isPending || !headline.trim()}
+          className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-40"
+        >
+          {isPending ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={isPending}
+          className="text-sm text-gray-500 hover:underline disabled:opacity-40"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   )
 }
 
