@@ -24,6 +24,13 @@ export type CardGroup = {
   card_id: string
   card_name: string
   card_slug: string
+  card_tier: string
+  card_annual_fee: number | null
+  card_annual_fee_waived: boolean
+  card_description: string | null
+  card_referral_url: string | null
+  card_image_url: string | null
+  card_is_active: boolean
   pending: OfferRow[]
   active: OfferRow[]
 }
@@ -40,16 +47,31 @@ export default async function ReviewPage() {
 
   const pendingCardIds = [...new Set((pendingRaw ?? []).map(o => o.card_id))]
 
-  // Active offers for the same cards (multi-source comparison)
-  const { data: activeRaw } = pendingCardIds.length
-    ? await supabaseAdmin
-        .from('card_offers')
-        .select('id, card_id, headline, points_value, cashback_value, spend_requirement, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at')
-        .eq('is_active', true)
-        .in('card_id', pendingCardIds)
-    : { data: [] }
+  // Active offers + card details for the same cards
+  type ActiveOfferRaw = { id: string; card_id: string; headline: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; offer_type: string; is_limited_time: boolean; expires_at: string | null; source_priority: number; source_name: string | null; review_status: string; is_active: boolean; scraped_at: string }
+  type CardDetailRaw = { id: string; name: string; slug: string; tier: string; annual_fee: number | null; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; is_active: boolean }
 
-  // Build grouped structure
+  const [{ data: activeRaw }, { data: cardDetails }] = await Promise.all([
+    pendingCardIds.length
+      ? supabaseAdmin
+          .from('card_offers')
+          .select('id, card_id, headline, points_value, cashback_value, spend_requirement, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at')
+          .eq('is_active', true)
+          .in('card_id', pendingCardIds)
+      : Promise.resolve({ data: [] as ActiveOfferRaw[] }),
+    pendingCardIds.length
+      ? supabaseAdmin
+          .from('credit_cards')
+          .select('id, name, slug, tier, annual_fee, annual_fee_waived_first_year, short_description, referral_url, image_url, is_active')
+          .in('id', pendingCardIds)
+      : Promise.resolve({ data: [] as CardDetailRaw[] }),
+  ])
+
+  // Build lookup maps
+  const cardDetailMap = new Map<string, CardDetailRaw>()
+  for (const c of (cardDetails ?? []) as CardDetailRaw[]) cardDetailMap.set(c.id, c)
+
+  // Also capture name/slug from pending join (fallback if cardDetails missing)
   const cardMeta = new Map<string, { name: string; slug: string }>()
   for (const o of pendingRaw ?? []) {
     const card = Array.isArray(o.credit_cards) ? o.credit_cards[0] : o.credit_cards as { name: string; slug: string } | null
@@ -64,19 +86,29 @@ export default async function ReviewPage() {
   }
 
   const activeByCard = new Map<string, OfferRow[]>()
-  for (const o of activeRaw ?? []) {
+  for (const o of (activeRaw ?? [])) {
     const list = activeByCard.get(o.card_id) ?? []
     list.push(o as OfferRow)
     activeByCard.set(o.card_id, list)
   }
 
-  const groups: CardGroup[] = pendingCardIds.map(id => ({
-    card_id: id,
-    card_name: cardMeta.get(id)?.name ?? id,
-    card_slug: cardMeta.get(id)?.slug ?? '',
-    pending: pendingByCard.get(id) ?? [],
-    active: activeByCard.get(id) ?? [],
-  }))
+  const groups: CardGroup[] = pendingCardIds.map(id => {
+    const cd = cardDetailMap.get(id)
+    return {
+      card_id: id,
+      card_name: cd?.name ?? cardMeta.get(id)?.name ?? id,
+      card_slug: cd?.slug ?? cardMeta.get(id)?.slug ?? '',
+      card_tier: cd?.tier ?? 'entry',
+      card_annual_fee: cd?.annual_fee ?? null,
+      card_annual_fee_waived: cd?.annual_fee_waived_first_year ?? false,
+      card_description: cd?.short_description ?? null,
+      card_referral_url: cd?.referral_url ?? null,
+      card_image_url: cd?.image_url ?? null,
+      card_is_active: cd?.is_active ?? true,
+      pending: pendingByCard.get(id) ?? [],
+      active: activeByCard.get(id) ?? [],
+    }
+  })
 
   return (
     <div className="space-y-6">

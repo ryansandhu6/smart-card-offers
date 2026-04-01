@@ -60,6 +60,7 @@ export async function updateCard(
     name: string
     tier: string
     is_active: boolean
+    annual_fee: number
     annual_fee_waived_first_year: boolean
     short_description: string | null
     referral_url: string | null
@@ -72,6 +73,7 @@ export async function updateCard(
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/cards')
+  revalidatePath('/admin/review')
 }
 
 export async function deactivateCard(id: string) {
@@ -164,6 +166,28 @@ export async function deactivateOffer(id: string) {
 }
 
 // ── Review queue ──────────────────────────────────────────────────────────────
+
+export async function sendCardToReview(cardId: string): Promise<{ success: boolean; error?: string }> {
+  // Mark all active offers as pending_review
+  const { error: e1 } = await supabaseAdmin
+    .from('card_offers')
+    .update({ review_status: 'pending_review' })
+    .eq('card_id', cardId)
+    .eq('is_active', true)
+  if (e1) return { success: false, error: e1.message }
+
+  // Also pull any already-pending offers (review_status=pending_review, is_active=false) back in
+  const { error: e2 } = await supabaseAdmin
+    .from('card_offers')
+    .update({ review_status: 'pending_review' })
+    .eq('card_id', cardId)
+    .eq('review_status', 'pending_review')
+  if (e2) return { success: false, error: e2.message }
+
+  revalidatePath('/admin/review')
+  revalidatePath('/admin')
+  return { success: true }
+}
 
 export async function approveOffer(id: string) {
   const { error } = await supabaseAdmin

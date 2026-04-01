@@ -40,7 +40,7 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
       )
     : cards
 
-  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) {
+  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) {
     setError(null)
     startTrans(async () => {
       try {
@@ -281,12 +281,13 @@ function EditRow({
 }: {
   card: Card
   isPending: boolean
-  onSave: (draft: { name: string; tier: string; is_active: boolean; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) => void
+  onSave: (draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) => void
   onCancel: () => void
 }) {
   const [name, setName]                                       = useState(card.name)
   const [tier, setTier]                                       = useState(card.tier)
   const [is_active, setIsActive]                              = useState(card.is_active)
+  const [annual_fee, setAnnualFee]                            = useState(card.annual_fee.toString())
   const [annual_fee_waived_first_year, setFyfWaived]          = useState(card.annual_fee_waived_first_year)
   const [short_description, setShortDesc]                     = useState(card.short_description ?? '')
   const [referral_url, setReferralUrl]                        = useState(card.referral_url ?? '')
@@ -326,7 +327,9 @@ function EditRow({
         <td className="px-4 py-2.5 space-x-2">
           <button
             onClick={() => onSave({
-              name, tier, is_active, annual_fee_waived_first_year,
+              name, tier, is_active,
+              annual_fee: annual_fee ? Number(annual_fee) : 0,
+              annual_fee_waived_first_year,
               short_description: short_description.trim() || null,
               referral_url: referral_url.trim() || null,
               image_url: image_url.trim() || null,

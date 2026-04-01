@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { supabaseAdmin } from '@/lib/supabase'
+import SendToReviewButton from './SendToReviewButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -141,7 +142,7 @@ export default async function AdminDashboard() {
                       </div>
                     </td>
                     <td className="px-4 py-2.5">
-                      <Link href="/admin/cards" className="text-xs text-blue-600 hover:underline">edit →</Link>
+                      <SendToReviewButton cardId={c.id} />
                     </td>
                   </tr>
                 ))}
