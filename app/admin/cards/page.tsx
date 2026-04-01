@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export default async function CardsPage() {
   const { data: cards, error } = await supabaseAdmin
     .from('credit_cards')
-    .select('id, name, slug, tier, is_active, rewards_type, issuer:issuers(name)')
+    .select('id, name, slug, tier, is_active, rewards_type, short_description, referral_url, issuer:issuers(name)')
     .order('name')
 
   if (error) return <p className="text-red-600">Failed to load cards: {error.message}</p>
@@ -15,6 +15,7 @@ export default async function CardsPage() {
   type CardRow = {
     id: string; name: string; slug: string; tier: string
     is_active: boolean; rewards_type: string
+    short_description: string | null; referral_url: string | null
     issuer: { name: string } | null
   }
   const rows = (cards ?? []).map(c => ({

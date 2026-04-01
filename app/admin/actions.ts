@@ -6,7 +6,13 @@ import { revalidatePath } from 'next/cache'
 
 export async function updateCard(
   id: string,
-  data: { name: string; tier: string; is_active: boolean }
+  data: {
+    name: string
+    tier: string
+    is_active: boolean
+    short_description: string | null
+    referral_url: string | null
+  }
 ) {
   const { error } = await supabaseAdmin
     .from('credit_cards')
