@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { updateOffer, deactivateOffer } from '../actions'
+import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 
 type Offer = {
   id: string
@@ -157,8 +158,7 @@ function ViewRow({
         {offer.cashback_value != null ? offer.cashback_value : '—'}
       </td>
       <td className="px-4 py-2.5">
-        <div className="text-xs text-gray-500">{offer.source_name ?? '—'}</div>
-        <div className="text-xs text-gray-400">p{offer.source_priority}</div>
+        <SourceBadge priority={offer.source_priority} />
       </td>
       <td className="px-4 py-2.5">
         <span className={`inline-block h-2 w-2 rounded-full ${offer.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
@@ -243,8 +243,7 @@ function EditRow({
         />
       </td>
       <td className="px-4 py-2.5">
-        <div className="text-xs text-gray-500">{offer.source_name ?? '—'}</div>
-        <div className="text-xs text-gray-400">p{offer.source_priority}</div>
+        <SourceBadge priority={offer.source_priority} />
       </td>
       <td className="px-4 py-2.5">
         <input
@@ -271,5 +270,22 @@ function EditRow({
         </button>
       </td>
     </tr>
+  )
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function SourceBadge({ priority }: { priority: number | null }) {
+  const p = priority ?? 0
+  const label = SOURCE_LABELS[p] ?? `p${p}`
+  const title = SOURCE_NAMES[p]
+  const cls =
+    p === 1 ? 'bg-blue-100 text-blue-700' :
+    p === 2 ? 'bg-indigo-100 text-indigo-700' :
+              'bg-gray-100 text-gray-600'
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-mono font-medium ${cls}`} title={title}>
+      {label}
+    </span>
   )
 }

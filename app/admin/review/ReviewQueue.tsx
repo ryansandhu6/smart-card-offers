@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { approveOffer, rejectOffer } from '../actions'
+import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 import type { CardGroup, OfferRow } from './page'
 
 export default function ReviewQueue({ groups }: { groups: CardGroup[] }) {
@@ -59,7 +60,7 @@ function CardSection({ group }: { group: CardGroup }) {
 function ActiveRow({ offer }: { offer: OfferRow }) {
   return (
     <tr className="bg-green-50 opacity-75">
-      <td className="px-4 py-2.5"><SourceBadge priority={offer.source_priority} name={offer.source_name} /></td>
+      <td className="px-4 py-2.5"><SourceBadge priority={offer.source_priority} /></td>
       <td className="px-4 py-2.5 tabular-nums text-gray-700 whitespace-nowrap">{formatValue(offer)}</td>
       <td className="px-4 py-2.5 text-gray-600 max-w-xs">{offer.headline}</td>
       <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">{fmtDate(offer.scraped_at)}</td>
@@ -102,7 +103,7 @@ function PendingRow({ offer, hasActive }: { offer: OfferRow; hasActive: boolean 
 
   return (
     <tr className="bg-amber-50">
-      <td className="px-4 py-2.5"><SourceBadge priority={offer.source_priority} name={offer.source_name} /></td>
+      <td className="px-4 py-2.5"><SourceBadge priority={offer.source_priority} /></td>
       <td className="px-4 py-2.5 tabular-nums font-medium whitespace-nowrap">{formatValue(offer)}</td>
       <td className="px-4 py-2.5 max-w-xs">{offer.headline}</td>
       <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">{fmtDate(offer.scraped_at)}</td>
@@ -146,14 +147,15 @@ function Th({ children }: { children: React.ReactNode }) {
   return <th className="px-4 py-2 text-left font-medium">{children}</th>
 }
 
-function SourceBadge({ priority, name }: { priority: number; name: string | null }) {
-  const label = name ?? `p${priority}`
+function SourceBadge({ priority }: { priority: number }) {
+  const label = SOURCE_LABELS[priority] ?? `p${priority}`
+  const title = SOURCE_NAMES[priority]
   const cls =
     priority === 1 ? 'bg-blue-100 text-blue-700' :
     priority === 2 ? 'bg-indigo-100 text-indigo-700' :
                      'bg-gray-100 text-gray-600'
   return (
-    <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-mono font-medium ${cls}`}>
+    <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-mono font-medium ${cls}`} title={title}>
       {label}
     </span>
   )
