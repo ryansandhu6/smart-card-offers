@@ -25,7 +25,7 @@ async function stealthFetch(
   timeoutMs = 15_000
 ): Promise<Response> {
   // Random jitter before the first request
-  const jitter = 1_000 + Math.random() * 2_000
+  const jitter = 200 + Math.random() * 600
   await new Promise(r => setTimeout(r, jitter))
 
   const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
