@@ -160,11 +160,17 @@ function CardSection({ group }: { group: CardGroup }) {
         </thead>
         <tbody className="divide-y divide-gray-100">
           {/* Active offers first — read-only comparison rows */}
-          {group.active.map(o => (
+          {[...group.active].sort((a, b) => {
+            const order: Record<string, number> = { welcome_bonus: 0, additional_offer: 1, referral: 2 }
+            return (order[a.offer_type] ?? 9) - (order[b.offer_type] ?? 9)
+          }).map(o => (
             <ActiveRow key={o.id} offer={o} />
           ))}
           {/* Pending offers — actionable */}
-          {group.pending.map(o => (
+          {[...group.pending].sort((a, b) => {
+            const order: Record<string, number> = { welcome_bonus: 0, additional_offer: 1, referral: 2 }
+            return (order[a.offer_type] ?? 9) - (order[b.offer_type] ?? 9)
+          }).map(o => (
             <PendingRow key={o.id} offer={o} hasActive={hasActive} />
           ))}
         </tbody>
@@ -345,12 +351,23 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
 // ── Active row (read-only, shown for comparison) ─────────────────────────────
 
 function ActiveRow({ offer }: { offer: OfferRow }) {
+  const rowCls = offer.offer_type === 'welcome_bonus'
+    ? 'bg-green-50 opacity-75 border-l-4 border-l-blue-300'
+    : offer.offer_type === 'additional_offer'
+    ? 'bg-green-50 opacity-75 border-l-4 border-l-purple-300'
+    : 'bg-green-50 opacity-75'
   return (
-    <tr className="bg-green-50 opacity-75">
+    <tr className={rowCls}>
       <td className="px-4 py-2.5">
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex flex-col gap-0.5">
+          <span className={`text-xs font-bold uppercase tracking-wide ${
+            offer.offer_type === 'welcome_bonus' ? 'text-blue-600' :
+            offer.offer_type === 'additional_offer' ? 'text-purple-600' : 'text-gray-500'
+          }`}>
+            {offer.offer_type === 'welcome_bonus' ? 'Welcome' :
+             offer.offer_type === 'additional_offer' ? 'Additional' : offer.offer_type}
+          </span>
           <SourceBadge priority={offer.source_priority} />
-          <span className="text-xs text-gray-400 font-mono">{offer.offer_type}</span>
         </div>
       </td>
       <td className="px-4 py-2.5 tabular-nums text-gray-700 whitespace-nowrap">{formatValue(offer)}</td>
@@ -417,8 +434,14 @@ function PendingRow({ offer, hasActive }: { offer: OfferRow; hasActive: boolean 
     )
   }
 
+  const rowCls = offer.offer_type === 'welcome_bonus'
+    ? 'bg-amber-50 border-l-4 border-l-blue-400'
+    : offer.offer_type === 'additional_offer'
+    ? 'bg-amber-50 border-l-4 border-l-purple-400'
+    : 'bg-amber-50'
+
   return (
-    <tr className="bg-amber-50">
+    <tr className={rowCls}>
       <td className="px-4 py-2.5">
         {editing ? (
           <select
@@ -429,9 +452,15 @@ function PendingRow({ offer, hasActive }: { offer: OfferRow; hasActive: boolean 
             {OFFER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         ) : (
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex flex-col gap-0.5">
+            <span className={`text-xs font-bold uppercase tracking-wide ${
+              offer.offer_type === 'welcome_bonus' ? 'text-blue-600' :
+              offer.offer_type === 'additional_offer' ? 'text-purple-600' : 'text-gray-500'
+            }`}>
+              {offer.offer_type === 'welcome_bonus' ? 'Welcome' :
+               offer.offer_type === 'additional_offer' ? 'Additional' : offer.offer_type}
+            </span>
             <SourceBadge priority={offer.source_priority} />
-            <span className="text-xs text-gray-500 font-mono">{offer.offer_type}</span>
           </div>
         )}
       </td>

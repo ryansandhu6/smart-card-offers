@@ -13,6 +13,7 @@ export default async function AdminDashboard() {
     { data: allActiveCards },
     { count: qualityCount },
     { data: allActiveOffers },
+    { data: pendingOffers },
   ] = await Promise.all([
     supabaseAdmin
       .from('credit_cards')
@@ -46,6 +47,10 @@ export default async function AdminDashboard() {
       .from('card_offers')
       .select('card_id, points_value, cashback_value, headline')
       .eq('is_active', true),
+    supabaseAdmin
+      .from('card_offers')
+      .select('card_id')
+      .eq('review_status', 'pending_review'),
   ])
 
   // Data quality score: % of active offers with both details and spend_requirement
@@ -54,6 +59,8 @@ export default async function AdminDashboard() {
   // Cards needing attention
   type ActiveCard = { id: string; name: string; slug: string; short_description: string | null; referral_url: string | null }
   type AttentionCard = { id: string; name: string; slug: string; issues: string[] }
+
+  const pendingCardIdSet = new Set((pendingOffers ?? []).map((o: { card_id: string }) => o.card_id))
 
   const offersByCard = new Map<string, { points_value: number | null; cashback_value: number | null; headline: string }[]>()
   for (const o of allActiveOffers ?? []) {
@@ -64,6 +71,7 @@ export default async function AdminDashboard() {
 
   const attentionCards: AttentionCard[] = []
   for (const card of (allActiveCards ?? []) as ActiveCard[]) {
+    if (pendingCardIdSet.has(card.id)) continue
     const issues: string[] = []
     const offers = offersByCard.get(card.id) ?? []
 
