@@ -32,8 +32,8 @@ const CARD_SLUG_ALIASES: Record<string, string> = {
   'amex gold personal':             'amex-gold-rewards',
   'amex marriott personal':         'amex-marriott-pers',
   'amex marriott business':         'amex-marriott-biz',
-  'amex aeroplan core':             'amex-aeroplan-core',
-  'amex aeroplan reserve':          'amex-aeroplan-reserve',
+  'amex aeroplan core':             'american-express-aeroplan-card',   // was amex-aeroplan-core (deactivated in migration 025)
+  'amex aeroplan reserve':          'american-express-aeroplan-reserve-card', // was amex-aeroplan-reserve (deactivated in migration 025)
   'amex business gold':             'amex-biz-gold',
   // BMO
   'bmo ascend we mc':               'bmo-ascend-world-elite-mastercard',
@@ -45,7 +45,7 @@ const CARD_SLUG_ALIASES: Record<string, string> = {
   'cibc aventura visa gold':        'cibc-aventura-visa-gold',
   'cibc dividend visa infinite':    'cibc-dividend-visa-infinite',
   'cibc aeroplan visa infinite':    'cibc-aeroplan-visa-infinite',
-  'cibc aeroplan visa privilege':   'cibc-aeroplan-visa-privilege',
+  'cibc aeroplan visa privilege':   'cibc-aeroplan-visa-infinite-privilege', // was cibc-aeroplan-visa-privilege (deactivated in migration 025)
   // MBNA
   'mbna rewards we mc':             'mbna-rewards-we-mc',
   // RBC
