@@ -1100,7 +1100,7 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 - Migrations done: 011–028
 - Active cards: 75 (down from 82, dupes merged)
 - Inactive cards: 32 (kept — have historical offers attached)
-- Active offers: 99
+- Active offers: 53
 
 ## What was done this session
 
@@ -1128,6 +1128,14 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 - Added additional_offer as valid offer_type in scraper-base.ts
 - Near-dupe detection in ensureCard(): warns + flags pending_review if
   incoming card name shares 2+ significant words with an existing active card
+
+### Second half of session (2026-04-01)
+- Audited 215 inactive offers — confirmed 194 are legitimate historical records, not junk
+- Deleted 15 $undefined headline rows (scraper validation gap fixed)
+- Fixed 2 rejected-but-active offer inconsistencies
+- Added image_url field to /admin/cards (edit + add card forms, thumbnail preview in view row)
+- Dashboard math confirmed correct — count will drop on next load as DB is now clean
+- Schema drift noted: image_url exists in live DB but not in any migration file
 
 ## Next Session TODO
 1. Run all 3 scrapers from /admin/scrapers

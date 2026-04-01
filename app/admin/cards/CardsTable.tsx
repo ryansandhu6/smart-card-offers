@@ -17,6 +17,7 @@ type Card = {
   rewards_type: string
   short_description: string | null
   referral_url: string | null
+  image_url: string | null
   issuer: { name: string } | null
 }
 
@@ -37,7 +38,7 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
       )
     : cards
 
-  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; short_description: string | null; referral_url: string | null }) {
+  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) {
     setError(null)
     startTrans(async () => {
       try {
@@ -77,7 +78,7 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
 
   async function handleCreate(draft: {
     name: string; issuer_id: string; card_network: string
-    tier: string; rewards_type: string; referral_url: string | null
+    tier: string; rewards_type: string; referral_url: string | null; image_url: string | null
   }) {
     setError(null)
     startTrans(async () => {
@@ -197,8 +198,15 @@ function ViewRow({
   return (
     <tr className={`hover:bg-gray-50 ${!card.is_active ? 'opacity-50' : ''}`}>
       <td className="px-4 py-2.5">
-        <div className="font-medium">{card.name}</div>
-        <div className="text-xs text-gray-400 font-mono">{card.slug}</div>
+        <div className="flex items-center gap-2">
+          {card.image_url && (
+            <img src={card.image_url} alt="" className="h-8 w-8 object-contain flex-shrink-0" />
+          )}
+          <div>
+            <div className="font-medium">{card.name}</div>
+            <div className="text-xs text-gray-400 font-mono">{card.slug}</div>
+          </div>
+        </div>
       </td>
       <td className="px-4 py-2.5 text-gray-600">{card.issuer?.name ?? '—'}</td>
       <td className="px-4 py-2.5">
@@ -257,7 +265,7 @@ function EditRow({
 }: {
   card: Card
   isPending: boolean
-  onSave: (draft: { name: string; tier: string; is_active: boolean; short_description: string | null; referral_url: string | null }) => void
+  onSave: (draft: { name: string; tier: string; is_active: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) => void
   onCancel: () => void
 }) {
   const [name, setName]                       = useState(card.name)
@@ -265,6 +273,7 @@ function EditRow({
   const [is_active, setIsActive]              = useState(card.is_active)
   const [short_description, setShortDesc]     = useState(card.short_description ?? '')
   const [referral_url, setReferralUrl]        = useState(card.referral_url ?? '')
+  const [image_url, setImageUrl]              = useState(card.image_url ?? '')
 
   return (
     <>
@@ -303,6 +312,7 @@ function EditRow({
               name, tier, is_active,
               short_description: short_description.trim() || null,
               referral_url: referral_url.trim() || null,
+              image_url: image_url.trim() || null,
             })}
             disabled={isPending}
             className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 disabled:opacity-40"
@@ -340,6 +350,16 @@ function EditRow({
               className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Image URL</label>
+            <input
+              type="url"
+              value={image_url}
+              onChange={e => setImageUrl(e.target.value)}
+              placeholder="https://…"
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
         </td>
       </tr>
     </>
@@ -353,7 +373,7 @@ function AddCardForm({
 }: {
   issuers: Issuer[]
   isPending: boolean
-  onSave: (draft: { name: string; issuer_id: string; card_network: string; tier: string; rewards_type: string; referral_url: string | null }) => void
+  onSave: (draft: { name: string; issuer_id: string; card_network: string; tier: string; rewards_type: string; referral_url: string | null; image_url: string | null }) => void
   onCancel: () => void
 }) {
   const [name,         setName]        = useState('')
@@ -362,6 +382,7 @@ function AddCardForm({
   const [tier,         setTier]        = useState<string>('entry')
   const [rewards_type, setRewardsType] = useState<string>('points')
   const [referral_url, setReferralUrl] = useState('')
+  const [image_url,    setImageUrl]    = useState('')
 
   function handleSave() {
     if (!name.trim()) return
@@ -372,6 +393,7 @@ function AddCardForm({
       tier,
       rewards_type,
       referral_url: referral_url.trim() || null,
+      image_url: image_url.trim() || null,
     })
   }
 
@@ -420,6 +442,16 @@ function AddCardForm({
             type="url"
             value={referral_url}
             onChange={e => setReferralUrl(e.target.value)}
+            placeholder="https://…"
+            className={`w-full ${inputCls}`}
+          />
+        </div>
+        <div className="col-span-2 sm:col-span-2">
+          <label className="block text-xs text-gray-500 mb-1">Image URL (optional)</label>
+          <input
+            type="url"
+            value={image_url}
+            onChange={e => setImageUrl(e.target.value)}
             placeholder="https://…"
             className={`w-full ${inputCls}`}
           />

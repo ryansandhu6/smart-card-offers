@@ -11,6 +11,7 @@ export async function createCard(data: {
   tier: string
   rewards_type: string
   referral_url: string | null
+  image_url: string | null
 }) {
   const base = data.name
     .toLowerCase()
@@ -41,6 +42,7 @@ export async function createCard(data: {
       tier: data.tier,
       rewards_type: data.rewards_type,
       referral_url: data.referral_url,
+      image_url: data.image_url,
       is_active: true,
       is_featured: false,
       annual_fee: 0,
@@ -60,6 +62,7 @@ export async function updateCard(
     is_active: boolean
     short_description: string | null
     referral_url: string | null
+    image_url: string | null
   }
 ) {
   const { error } = await supabaseAdmin
