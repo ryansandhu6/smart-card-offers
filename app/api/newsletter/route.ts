@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/newsletter/route.ts
 // POST /api/newsletter — double opt-in signup (CASL compliant)
 //

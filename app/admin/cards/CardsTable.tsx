@@ -18,6 +18,7 @@ type Card = {
   short_description: string | null
   referral_url: string | null
   image_url: string | null
+  has_fyf: boolean
   issuer: { name: string } | null
 }
 
@@ -126,6 +127,15 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
         )}
       </div>
 
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-gray-400 whitespace-nowrap">Tier Guide:</span>
+        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">no-fee</span>
+        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600">entry</span>
+        <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-600">mid</span>
+        <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700">premium</span>
+        <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700">super-premium</span>
+      </div>
+
       {showAdd && (
         <AddCardForm
           issuers={issuers}
@@ -203,7 +213,12 @@ function ViewRow({
             <img src={card.image_url} alt="" className="h-8 w-8 object-contain flex-shrink-0" />
           )}
           <div>
-            <div className="font-medium">{card.name}</div>
+            <div className="font-medium">
+              {card.name}
+              {card.has_fyf && (
+                <span className="text-xs bg-green-100 text-green-700 rounded px-1.5 py-0.5 inline-block ml-2">FYF</span>
+              )}
+            </div>
             <div className="text-xs text-gray-400 font-mono">{card.slug}</div>
           </div>
         </div>

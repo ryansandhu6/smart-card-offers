@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/cards/[slug]/history/route.ts
 // GET /api/cards/:slug/history — offer history and stats for a single card
 

@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/issuers/route.ts
 // GET /api/issuers — list all issuers that have at least one active card
 

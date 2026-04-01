@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/blog/route.ts
 // GET /api/blog — published blog posts with pagination
 // Query params: ?page=1&limit=10&category=card-review

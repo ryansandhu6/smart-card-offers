@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/cards/[slug]/route.ts
 // GET /api/cards/:slug — single card with all active offers, issuer, and full metadata
 

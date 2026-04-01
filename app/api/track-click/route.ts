@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/track-click/route.ts
 // POST /api/track-click — logs a referral click to referral_clicks table.
 // IP is SHA-256 hashed with IP_HASH_SALT for privacy compliance.

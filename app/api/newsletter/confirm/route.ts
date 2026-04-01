@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/newsletter/confirm/route.ts
 // GET /api/newsletter/confirm?token=<hex>
 //

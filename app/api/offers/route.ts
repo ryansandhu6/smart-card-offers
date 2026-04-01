@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveOffers, getOfferHistoryStats } from '@/lib/supabase'
 

@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 import { NextResponse } from 'next/server'
 import { getMortgageRates } from '@/lib/supabase'
 

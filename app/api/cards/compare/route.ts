@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/cards/compare/route.ts
 // GET /api/cards/compare?slugs=amex-cobalt,td-aeroplan-visa-infinite,rbc-avion-visa-infinite
 // Returns 2–3 cards side-by-side with their best active offer and is_better_than_usual flag.

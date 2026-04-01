@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/valuations/route.ts
 // GET /api/valuations — all points program valuations (cpp = cents per point)
 

@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 import { NextRequest, NextResponse } from 'next/server'
 import { getCards, searchCards } from '@/lib/supabase'
 

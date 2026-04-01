@@ -1129,6 +1129,14 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 - Near-dupe detection in ensureCard(): warns + flags pending_review if
   incoming card name shares 2+ significant words with an existing active card
 
+### Third wave (2026-04-01)
+- Redirected app root to /admin — repo is now admin-only
+- Public API routes confirmed and documented (13 routes for cousin's frontend)
+- FYF badge added to /admin/cards view rows
+- Tier legend added to /admin/cards toolbar
+- image_url field added to edit and add card forms with thumbnail preview
+- Dashboard force-dynamic confirmed — count discrepancy was browser cache
+
 ### Second half of session (2026-04-01)
 - Audited 215 inactive offers — confirmed 194 are legitimate historical records, not junk
 - Deleted 15 $undefined headline rows (scraper validation gap fixed)

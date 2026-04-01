@@ -1,3 +1,4 @@
+// Public API — for external frontend use only
 // app/api/cards/[slug]/apply/route.ts
 // GET /api/cards/:slug/apply
 //
