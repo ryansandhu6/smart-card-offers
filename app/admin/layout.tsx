@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 
 const NAV_LINKS = [
   { href: '/admin',          label: 'Dashboard' },
+  { href: '/admin/review',   label: 'Review' },
   { href: '/admin/cards',    label: 'Cards' },
   { href: '/admin/offers',   label: 'Offers' },
   { href: '/admin/scrapers', label: 'Scrapers' },

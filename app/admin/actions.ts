@@ -58,3 +58,25 @@ export async function deactivateOffer(id: string) {
   if (error) throw new Error(error.message)
   revalidatePath('/admin/offers')
 }
+
+// ── Review queue ──────────────────────────────────────────────────────────────
+
+export async function approveOffer(id: string) {
+  const { error } = await supabaseAdmin
+    .from('card_offers')
+    .update({ is_active: true, review_status: 'approved' })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/review')
+  revalidatePath('/admin')
+}
+
+export async function rejectOffer(id: string) {
+  const { error } = await supabaseAdmin
+    .from('card_offers')
+    .update({ is_active: false, review_status: 'rejected' })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/review')
+  revalidatePath('/admin')
+}

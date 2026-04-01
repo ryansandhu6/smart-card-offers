@@ -288,7 +288,7 @@ export abstract class BaseScraper {
     // Check if an offer with the same natural key already exists
     const { data: existing } = await supabaseAdmin
       .from('card_offers')
-      .select('id, source_priority')
+      .select('id, source_priority, review_status')
       .eq('card_id', card_id)
       .eq('offer_type', offer.offer_type)
       .eq('headline', offer.headline)
@@ -302,9 +302,13 @@ export abstract class BaseScraper {
       // Counted as `records_skipped` in scrape_logs.
       if ((existing.source_priority ?? 99) <= incomingPriority) {
         // Heartbeat refresh only — do NOT log to offer_history (no content change).
+        // Only re-activate offers that are already approved; leave pending_review
+        // and rejected rows in their current state so admin review is respected.
+        const heartbeat: Record<string, unknown> = { last_seen_at: now, confidence_score: confidence }
+        if ((existing as any).review_status !== 'pending_review') heartbeat.is_active = true
         const { error } = await supabaseAdmin
           .from('card_offers')
-          .update({ last_seen_at: now, confidence_score: confidence, is_active: true })
+          .update(heartbeat)
           .eq('id', existing.id)
         if (error) throw new Error(`last_seen_at update failed: ${error.message}`)
         return 'skipped'
@@ -328,7 +332,8 @@ export abstract class BaseScraper {
             source_name: this.sourceName || null,
             is_verified: incomingVerified,
             confidence_score: confidence,
-            is_active: true,
+            is_active: false,
+            review_status: 'pending_review',
           })
           .eq('id', existing.id)
         if (error) throw new Error(`offer overwrite failed: ${error.message}`)
@@ -358,7 +363,8 @@ export abstract class BaseScraper {
           source_name: this.sourceName || null,
           is_verified: incomingVerified,
           confidence_score: confidence,
-          is_active: true,
+          is_active: false,
+          review_status: 'pending_review',
         })
       if (error) throw new Error(`offer insert failed: ${error.message}`)
       await logOfferHistory({ card_id, offer_type: offer.offer_type, headline: offer.headline, points_value: offer.points_value, cashback_value: offer.cashback_value, spend_requirement: offer.spend_requirement, spend_timeframe_days: offer.spend_timeframe_days, source_priority: incomingPriority })
