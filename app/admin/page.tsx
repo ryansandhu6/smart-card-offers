@@ -10,8 +10,8 @@ export default async function AdminDashboard() {
     { count: pendingCount },
     { data: logs },
     { data: allActiveCards },
-    { data: cardsWithOffers },
     { count: qualityCount },
+    { data: allActiveOffers },
   ] = await Promise.all([
     supabaseAdmin
       .from('credit_cards')
@@ -28,16 +28,12 @@ export default async function AdminDashboard() {
     supabaseAdmin
       .from('scrape_logs')
       .select('scraper_name, ran_at, status, records_found, records_updated, records_skipped, duration_ms, error_message')
-      .neq('scraper_name', 'churningcanada-sha')
+      .in('scraper_name', ['churningcanada', 'princeoftravel', 'mintflying'])
       .order('ran_at', { ascending: false })
       .limit(30),
     supabaseAdmin
       .from('credit_cards')
-      .select('id, name, slug')
-      .eq('is_active', true),
-    supabaseAdmin
-      .from('card_offers')
-      .select('card_id')
+      .select('id, name, slug, short_description, referral_url')
       .eq('is_active', true),
     supabaseAdmin
       .from('card_offers')
@@ -45,14 +41,41 @@ export default async function AdminDashboard() {
       .eq('is_active', true)
       .not('spend_requirement', 'is', null)
       .not('details', 'is', null),
+    supabaseAdmin
+      .from('card_offers')
+      .select('card_id, points_value, cashback_value, headline')
+      .eq('is_active', true),
   ])
-
-  // Cards with no active offers
-  const withOfferSet = new Set((cardsWithOffers ?? []).map(r => r.card_id))
-  const noOfferCards = (allActiveCards ?? []).filter(c => !withOfferSet.has(c.id))
 
   // Data quality score: % of active offers with both details and spend_requirement
   const qualityPct = offerCount ? Math.round(((qualityCount ?? 0) / offerCount) * 100) : 0
+
+  // Cards needing attention
+  type ActiveCard = { id: string; name: string; slug: string; short_description: string | null; referral_url: string | null }
+  type AttentionCard = { id: string; name: string; slug: string; issues: string[] }
+
+  const offersByCard = new Map<string, { points_value: number | null; cashback_value: number | null; headline: string }[]>()
+  for (const o of allActiveOffers ?? []) {
+    const list = offersByCard.get(o.card_id) ?? []
+    list.push(o)
+    offersByCard.set(o.card_id, list)
+  }
+
+  const attentionCards: AttentionCard[] = []
+  for (const card of (allActiveCards ?? []) as ActiveCard[]) {
+    const issues: string[] = []
+    const offers = offersByCard.get(card.id) ?? []
+
+    if (!card.short_description) issues.push('no description')
+    if (offers.length === 0) issues.push('no active offers')
+    if (offers.some(o => o.headline?.includes('$undefined'))) issues.push('$undefined headline')
+    if (offers.some(o => (o.points_value === 0 || o.points_value == null) && (o.cashback_value === 0 || o.cashback_value == null))) issues.push('zero-value offer')
+    if (!card.referral_url) issues.push('no referral URL')
+
+    if (issues.length > 0) attentionCards.push({ id: card.id, name: card.name, slug: card.slug, issues })
+  }
+  // Sort: most issues first
+  attentionCards.sort((a, b) => b.issues.length - a.issues.length)
 
   type LogRow = { scraper_name: string; ran_at: string; status: string; records_found: number; records_updated: number; records_skipped: number; duration_ms: number; error_message: string | null }
   const byScraperMap = new Map<string, LogRow>()
@@ -82,12 +105,12 @@ export default async function AdminDashboard() {
         />
       </div>
 
-      {/* Cards with no active offers */}
-      {noOfferCards.length > 0 && (
+      {/* Cards needing attention */}
+      {attentionCards.length > 0 && (
         <section>
           <h2 className="text-lg font-medium mb-3">
-            Cards with No Active Offers
-            <span className="ml-2 text-sm font-normal text-gray-500">({noOfferCards.length})</span>
+            Cards Needing Attention
+            <span className="ml-2 text-sm font-normal text-gray-500">({attentionCards.length})</span>
           </h2>
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="w-full text-sm">
@@ -95,13 +118,31 @@ export default async function AdminDashboard() {
                 <tr>
                   <th className="px-4 py-2 text-left">Card</th>
                   <th className="px-4 py-2 text-left">Slug</th>
+                  <th className="px-4 py-2 text-left">Issues</th>
+                  <th className="px-4 py-2 text-left">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {noOfferCards.map(c => (
+                {attentionCards.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2.5 font-medium">{c.name}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{c.slug}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1">
+                        {c.issues.map(issue => (
+                          <span key={issue} className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                            issue === 'no active offers' || issue === '$undefined headline' || issue === 'zero-value offer'
+                              ? 'bg-red-100 text-red-700'
+                              : issue === 'no description'
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-gray-100 text-gray-500'
+                          }`}>{issue}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <Link href="/admin/cards" className="text-xs text-blue-600 hover:underline">edit →</Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
