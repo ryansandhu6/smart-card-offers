@@ -123,16 +123,20 @@ export async function createOffer(data: {
   source_priority: number
   is_limited_time: boolean
   expires_at: string | null
+  is_active?: boolean
+  review_status?: string
 }) {
+  const { is_active, review_status, ...rest } = data
   const { error } = await supabaseAdmin
     .from('card_offers')
     .insert({
-      ...data,
-      is_active: true,
-      review_status: 'approved',
+      ...rest,
+      is_active: is_active ?? true,
+      review_status: review_status ?? 'approved',
     })
   if (error) throw new Error(error.message)
   revalidatePath('/admin/offers')
+  revalidatePath('/admin/review')
 }
 
 export async function updateOffer(

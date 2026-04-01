@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approveOffer, rejectOffer, updateOffer, updateCard } from '../actions'
+import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 import type { CardGroup, OfferRow } from './page'
 
@@ -169,7 +169,176 @@ function CardSection({ group }: { group: CardGroup }) {
           ))}
         </tbody>
       </table>
+      <AddOfferPanel cardId={group.card_id} />
     </section>
+  )
+}
+
+// ── Add Offer panel ───────────────────────────────────────────────────────────
+
+function AddOfferPanel({ cardId }: { cardId: string }) {
+  const [open, setOpen] = useState(false)
+  const [isPending, startTrans] = useTransition()
+  const [savedOk, setSavedOk] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const router = useRouter()
+
+  // Welcome bonus fields
+  const [wHeadline, setWHeadline] = useState('')
+  const [wPoints, setWPoints] = useState('')
+  const [wCash, setWCash] = useState('')
+  const [wSpend, setWSpend] = useState('')
+  const [wLtd, setWLtd] = useState(false)
+  const [wExpires, setWExpires] = useState('')
+
+  // Additional bonus fields
+  const [aHeadline, setAHeadline] = useState('')
+  const [aPoints, setAPoints] = useState('')
+  const [aCash, setACash] = useState('')
+  const [aSpend, setASpend] = useState('')
+  const [aLtd, setALtd] = useState(false)
+  const [aExpires, setAExpires] = useState('')
+
+  const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 w-full'
+
+  function handleSave() {
+    setErr(null)
+    setSavedOk(false)
+    startTrans(async () => {
+      try {
+        // Save welcome bonus if headline filled
+        if (wHeadline.trim()) {
+          await createOffer({
+            card_id: cardId,
+            headline: wHeadline.trim(),
+            offer_type: 'welcome_bonus',
+            points_value: wPoints ? Number(wPoints) : null,
+            cashback_value: wCash ? Number(wCash) : null,
+            spend_requirement: wSpend ? Number(wSpend) : null,
+            source_name: 'manual',
+            source_priority: 9,
+            is_limited_time: wLtd,
+            expires_at: wExpires || null,
+            is_active: false,
+            review_status: 'pending_review',
+          })
+        }
+        // Save additional bonus if headline filled
+        if (aHeadline.trim()) {
+          await createOffer({
+            card_id: cardId,
+            headline: aHeadline.trim(),
+            offer_type: 'additional_offer',
+            points_value: aPoints ? Number(aPoints) : null,
+            cashback_value: aCash ? Number(aCash) : null,
+            spend_requirement: aSpend ? Number(aSpend) : null,
+            source_name: 'manual',
+            source_priority: 9,
+            is_limited_time: aLtd,
+            expires_at: aExpires || null,
+            is_active: false,
+            review_status: 'pending_review',
+          })
+        }
+        setSavedOk(true)
+        setOpen(false)
+        router.refresh()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Save failed')
+      }
+    })
+  }
+
+  return (
+    <div className="border-t border-gray-100">
+      {!open ? (
+        <button
+          onClick={() => { setOpen(true); setSavedOk(false) }}
+          className="w-full py-2 text-xs text-blue-600 hover:bg-blue-50 transition-colors"
+        >
+          + Add Offer
+        </button>
+      ) : (
+        <div className="px-5 py-4 bg-gray-50 space-y-4">
+          <div className="grid grid-cols-2 gap-6">
+            {/* Welcome Bonus */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide border-b pb-1">Welcome Bonus</h4>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Headline</label>
+                <input value={wHeadline} onChange={e => setWHeadline(e.target.value)} placeholder="e.g. Earn 60,000 points..." className={inputCls} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Points</label>
+                  <input type="number" value={wPoints} onChange={e => setWPoints(e.target.value)} placeholder="0" className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Cash ($)</label>
+                  <input type="number" step="0.01" value={wCash} onChange={e => setWCash(e.target.value)} placeholder="0.00" className={inputCls} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Spend Req ($)</label>
+                <input type="number" value={wSpend} onChange={e => setWSpend(e.target.value)} placeholder="0" className={inputCls} />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={wLtd} onChange={e => setWLtd(e.target.checked)} className="h-3.5 w-3.5" />
+                Limited time
+              </label>
+              {wLtd && <input type="date" value={wExpires} onChange={e => setWExpires(e.target.value)} className={inputCls} />}
+            </div>
+
+            {/* Additional Bonus */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide border-b pb-1">Additional Bonus</h4>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Headline</label>
+                <input value={aHeadline} onChange={e => setAHeadline(e.target.value)} placeholder="e.g. Plus earn 15,000 more..." className={inputCls} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Points</label>
+                  <input type="number" value={aPoints} onChange={e => setAPoints(e.target.value)} placeholder="0" className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Cash ($)</label>
+                  <input type="number" step="0.01" value={aCash} onChange={e => setACash(e.target.value)} placeholder="0.00" className={inputCls} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Spend Req ($)</label>
+                <input type="number" value={aSpend} onChange={e => setASpend(e.target.value)} placeholder="0" className={inputCls} />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={aLtd} onChange={e => setALtd(e.target.checked)} className="h-3.5 w-3.5" />
+                Limited time
+              </label>
+              {aLtd && <input type="date" value={aExpires} onChange={e => setAExpires(e.target.value)} className={inputCls} />}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={handleSave}
+              disabled={isPending || (!wHeadline.trim() && !aHeadline.trim())}
+              className="text-sm bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 disabled:opacity-40"
+            >
+              {isPending ? 'Saving…' : 'Save Offers'}
+            </button>
+            <button
+              onClick={() => setOpen(false)}
+              disabled={isPending}
+              className="text-sm text-gray-500 hover:underline disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            {savedOk && <span className="text-xs text-green-600">Saved</span>}
+            {err && <span className="text-xs text-red-600">{err}</span>}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
