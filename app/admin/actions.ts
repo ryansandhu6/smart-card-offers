@@ -31,6 +31,31 @@ export async function deactivateCard(id: string) {
   revalidatePath('/admin/cards')
 }
 
+export async function reactivateCard(id: string) {
+  const { error } = await supabaseAdmin
+    .from('credit_cards')
+    .update({ is_active: true })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/cards')
+}
+
+export async function deleteCard(id: string) {
+  // Delete child offers first to satisfy FK constraint
+  const { error: offersError } = await supabaseAdmin
+    .from('card_offers')
+    .delete()
+    .eq('card_id', id)
+  if (offersError) throw new Error(offersError.message)
+
+  const { error } = await supabaseAdmin
+    .from('credit_cards')
+    .delete()
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/cards')
+}
+
 // ── Offers ───────────────────────────────────────────────────────────────────
 
 export async function updateOffer(

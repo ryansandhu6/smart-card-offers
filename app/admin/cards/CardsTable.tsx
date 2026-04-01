@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateCard, deactivateCard } from '../actions'
+import { updateCard, deactivateCard, reactivateCard, deleteCard } from '../actions'
 
 const TIERS = ['no-fee', 'entry', 'mid', 'premium', 'super-premium'] as const
 
@@ -57,6 +57,32 @@ export default function CardsTable({ cards }: { cards: Card[] }) {
     })
   }
 
+  async function handleReactivate(id: string) {
+    setError(null)
+    startTrans(async () => {
+      try {
+        await reactivateCard(id)
+        router.refresh()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Reactivate failed')
+      }
+    })
+  }
+
+  async function handleDelete(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}" and all its offers?`)) return
+    setError(null)
+    startTrans(async () => {
+      try {
+        await deleteCard(id)
+        router.refresh()
+        setEditing(null)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Delete failed')
+      }
+    })
+  }
+
   return (
     <div className="space-y-3">
       <input
@@ -100,6 +126,8 @@ export default function CardsTable({ cards }: { cards: Card[] }) {
                     isPending={isPending}
                     onEdit={() => setEditing(card.id)}
                     onDeactivate={() => handleDeactivate(card.id)}
+                    onReactivate={() => handleReactivate(card.id)}
+                    onDelete={() => handleDelete(card.id, card.name)}
                   />
             )}
             {visible.length === 0 && (
@@ -116,12 +144,14 @@ export default function CardsTable({ cards }: { cards: Card[] }) {
 // ── View row ─────────────────────────────────────────────────────────────────
 
 function ViewRow({
-  card, isPending, onEdit, onDeactivate,
+  card, isPending, onEdit, onDeactivate, onReactivate, onDelete,
 }: {
   card: Card
   isPending: boolean
   onEdit: () => void
   onDeactivate: () => void
+  onReactivate: () => void
+  onDelete: () => void
 }) {
   return (
     <tr className={`hover:bg-gray-50 ${!card.is_active ? 'opacity-50' : ''}`}>
@@ -142,7 +172,7 @@ function ViewRow({
       <td className="px-4 py-2.5">
         <ActiveDot active={card.is_active} />
       </td>
-      <td className="px-4 py-2.5 space-x-2">
+      <td className="px-4 py-2.5 space-x-2 whitespace-nowrap">
         <button
           onClick={onEdit}
           disabled={isPending}
@@ -150,7 +180,7 @@ function ViewRow({
         >
           Edit
         </button>
-        {card.is_active && (
+        {card.is_active ? (
           <button
             onClick={onDeactivate}
             disabled={isPending}
@@ -158,7 +188,22 @@ function ViewRow({
           >
             Deactivate
           </button>
+        ) : (
+          <button
+            onClick={onReactivate}
+            disabled={isPending}
+            className="text-xs text-green-600 hover:underline disabled:opacity-40"
+          >
+            Reactivate
+          </button>
         )}
+        <button
+          onClick={onDelete}
+          disabled={isPending}
+          className="text-xs text-gray-400 hover:text-red-600 hover:underline disabled:opacity-40"
+        >
+          Delete
+        </button>
       </td>
     </tr>
   )
