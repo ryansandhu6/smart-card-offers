@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ChurningCanadaScraper } from '@/scrapers/churningcanada'
 import { sendAlert } from '@/lib/alert'
 
+export const maxDuration = 300
+
 function checkAuth(req: NextRequest): boolean {
   const auth = req.headers.get('authorization')
   return !!(process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`)

@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ChurningCanadaScraper } from '@/scrapers/churningcanada'
 import { MintFlyingScraper, PrinceOfTravelScraper } from '@/scrapers/aggregators'
 
+export const maxDuration = 300
+
 const SCRAPERS = {
   churningcanada: () => new ChurningCanadaScraper(),
   mintflying:     () => new MintFlyingScraper(),

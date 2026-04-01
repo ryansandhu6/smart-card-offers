@@ -477,9 +477,9 @@ export class PrinceOfTravelScraper extends BaseScraper {
       } catch (err) {
         console.warn(`[princeoftravel] Failed to scrape ${url}: ${err}`)
       }
-      // 2-second polite delay between card page requests
+      // Polite delay between card page requests
       if (i < cardUrls.length - 1) {
-        await new Promise(r => setTimeout(r, 2_000))
+        await new Promise(r => setTimeout(r, 500))
       }
     }
 

@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MintFlyingScraper, PrinceOfTravelScraper } from '@/scrapers/aggregators'
 import { sendAlert } from '@/lib/alert'
 
+export const maxDuration = 300
+
 const POT_CANARY_MIN = 50   // alert if PoT returns fewer cards than this
 
 function checkAuth(req: NextRequest): boolean {
