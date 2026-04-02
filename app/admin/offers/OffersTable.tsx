@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition } from 'react'
+import React, { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createOffer, updateOffer, deactivateOffer } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
@@ -47,6 +47,17 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
       o.source_name?.toLowerCase().includes(q)
     )
   })
+
+  const TYPE_ORDER: Record<string, number> = { welcome_bonus: 0, additional_offer: 1, referral: 2 }
+  const grouped = new Map<string, { cardName: string; cardSlug: string; offers: Offer[] }>()
+  for (const o of visible) {
+    const key = o.card?.slug ?? 'unknown'
+    if (!grouped.has(key)) grouped.set(key, { cardName: o.card?.name ?? '—', cardSlug: key, offers: [] })
+    grouped.get(key)!.offers.push(o)
+  }
+  for (const g of grouped.values()) {
+    g.offers.sort((a, b) => (TYPE_ORDER[a.offer_type] ?? 9) - (TYPE_ORDER[b.offer_type] ?? 9))
+  }
 
   async function handleCreate(draft: {
     card_id: string; headline: string; offer_type: string
@@ -141,7 +152,6 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b text-gray-500 text-xs uppercase tracking-wide">
             <tr>
-              <th className="px-4 py-2 text-left">Card</th>
               <th className="px-4 py-2 text-left">Headline</th>
               <th className="px-4 py-2 text-right">Points</th>
               <th className="px-4 py-2 text-right">Cash</th>
@@ -152,25 +162,35 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {visible.map(offer =>
-              editing === offer.id
-                ? <EditRow
-                    key={offer.id}
-                    offer={offer}
-                    isPending={isPending}
-                    onSave={draft => handleSave(offer, draft)}
-                    onCancel={() => setEditing(null)}
-                  />
-                : <ViewRow
-                    key={offer.id}
-                    offer={offer}
-                    isPending={isPending}
-                    onEdit={() => setEditing(offer.id)}
-                    onDeactivate={() => handleDeactivate(offer.id)}
-                  />
-            )}
+            {[...grouped.entries()].map(([slug, { cardName, offers: groupOffers }]) => (
+              <React.Fragment key={slug}>
+                <tr className="bg-gray-100 border-t border-gray-200">
+                  <td colSpan={7} className="px-4 py-1.5">
+                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{cardName}</span>
+                    <span className="ml-2 text-xs text-gray-400 font-mono">{slug}</span>
+                  </td>
+                </tr>
+                {groupOffers.map(offer =>
+                  editing === offer.id
+                    ? <EditRow
+                        key={offer.id}
+                        offer={offer}
+                        isPending={isPending}
+                        onSave={draft => handleSave(offer, draft)}
+                        onCancel={() => setEditing(null)}
+                      />
+                    : <ViewRow
+                        key={offer.id}
+                        offer={offer}
+                        isPending={isPending}
+                        onEdit={() => setEditing(offer.id)}
+                        onDeactivate={() => handleDeactivate(offer.id)}
+                      />
+                )}
+              </React.Fragment>
+            ))}
             {visible.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">No offers found</td></tr>
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">No offers found</td></tr>
             )}
           </tbody>
         </table>
@@ -190,15 +210,24 @@ function ViewRow({
   onEdit: () => void
   onDeactivate: () => void
 }) {
+  const borderCls =
+    offer.offer_type === 'welcome_bonus'   ? 'border-l-4 border-l-blue-400' :
+    offer.offer_type === 'additional_offer' ? 'border-l-4 border-l-purple-400' :
+                                              'border-l-4 border-l-gray-300'
+  const typeLabelCls =
+    offer.offer_type === 'welcome_bonus'   ? 'bg-blue-100 text-blue-700' :
+    offer.offer_type === 'additional_offer' ? 'bg-purple-100 text-purple-700' :
+                                              'bg-gray-100 text-gray-600'
+  const typeLabel =
+    offer.offer_type === 'welcome_bonus'   ? 'Welcome' :
+    offer.offer_type === 'additional_offer' ? 'Additional' :
+                                              offer.offer_type
+
   return (
-    <tr className={`hover:bg-gray-50 ${!offer.is_active ? 'opacity-50' : ''}`}>
-      <td className="px-4 py-2.5">
-        <div className="font-medium text-xs">{offer.card?.name ?? '—'}</div>
-        <div className="text-xs text-gray-400 font-mono">{offer.card?.slug}</div>
-      </td>
+    <tr className={`hover:bg-gray-50 ${!offer.is_active ? 'opacity-50' : ''} ${borderCls}`}>
       <td className="px-4 py-2.5 max-w-xs">
         <div className="truncate">{offer.headline}</div>
-        <div className="text-xs text-gray-500 mt-0.5">{offer.offer_type}</div>
+        <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-medium ${typeLabelCls}`}>{typeLabel}</span>
       </td>
       <td className="px-4 py-2.5 text-right tabular-nums">
         {offer.points_value != null ? offer.points_value.toLocaleString() : '—'}
@@ -275,12 +304,13 @@ function EditRow({
     })
   }
 
+  const editBorderCls =
+    offer.offer_type === 'welcome_bonus'    ? 'border-l-4 border-l-blue-400' :
+    offer.offer_type === 'additional_offer' ? 'border-l-4 border-l-purple-400' :
+                                              'border-l-4 border-l-gray-300'
+
   return (
-    <tr className="bg-blue-50">
-      <td className="px-4 py-2.5">
-        <div className="text-xs font-medium">{offer.card?.name ?? '—'}</div>
-        <div className="text-xs text-gray-400 font-mono">{offer.card?.slug}</div>
-      </td>
+    <tr className={`bg-blue-50 ${editBorderCls}`}>
       <td className="px-4 py-2.5">
         <input
           value={headline}
