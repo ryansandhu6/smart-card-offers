@@ -30,6 +30,7 @@ type Offer = {
 type CardRow = {
   cardSlug: string
   cardName: string
+  cardId: string
   welcomeOffer: Offer | null
   additionalOffer: Offer | null
   source_priority: number | null
@@ -75,7 +76,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
     const priorities = [welcome, additional].filter(Boolean).map(o => o!.source_priority ?? 9)
     const sourcePriority = priorities.length > 0 ? Math.min(...priorities) : null
     const isLtd = [welcome, additional].some(o => o?.is_limited_time)
-    return { cardSlug: slug, cardName: g.cardName, welcomeOffer: welcome, additionalOffer: additional, source_priority: sourcePriority, is_limited_time: isLtd }
+    return { cardSlug: slug, cardName: g.cardName, cardId: g.offers[0]?.card_id ?? '', welcomeOffer: welcome, additionalOffer: additional, source_priority: sourcePriority, is_limited_time: isLtd }
   })
 
   async function handleCreate(draft: {
@@ -92,19 +93,6 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
         setShowAdd(false)
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Create failed')
-      }
-    })
-  }
-
-  async function handleSaveOffers(drafts: { id: string; draft: { headline: string; offer_type: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; is_active: boolean; is_limited_time: boolean; expires_at: string | null } }[]) {
-    setError(null)
-    startTrans(async () => {
-      try {
-        await Promise.all(drafts.map(({ id, draft }) => updateOffer(id, draft)))
-        router.refresh()
-        setEditingCard(null)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Save failed')
       }
     })
   }
@@ -207,8 +195,8 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
                       <CardEditPanel
                         welcomeOffer={row.welcomeOffer}
                         additionalOffer={row.additionalOffer}
-                        isPending={isPending}
-                        onSave={handleSaveOffers}
+                        cardId={row.cardId}
+                        onDone={() => setEditingCard(null)}
                         onCancel={() => setEditingCard(null)}
                       />
                     </td>
@@ -229,22 +217,19 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
 
 // ── Card Edit Panel ───────────────────────────────────────────────────────────
 
-type OfferDraft = {
-  headline: string; offer_type: string
-  points_value: number | null; cashback_value: number | null
-  spend_requirement: number | null; is_active: boolean
-  is_limited_time: boolean; expires_at: string | null
-}
-
 function CardEditPanel({
-  welcomeOffer, additionalOffer, isPending, onSave, onCancel,
+  welcomeOffer, additionalOffer, cardId, onDone, onCancel,
 }: {
   welcomeOffer: Offer | null
   additionalOffer: Offer | null
-  isPending: boolean
-  onSave: (drafts: { id: string; draft: OfferDraft }[]) => void
+  cardId: string
+  onDone: () => void
   onCancel: () => void
 }) {
+  const [isPending, startTrans] = useTransition()
+  const [err, setErr]           = useState<string | null>(null)
+  const router = useRouter()
+
   const [wHeadline, setWHeadline] = useState(welcomeOffer?.headline ?? '')
   const [wPoints,   setWPoints]   = useState(welcomeOffer?.points_value?.toString() ?? '')
   const [wSpend,    setWSpend]    = useState(welcomeOffer?.spend_requirement?.toString() ?? '')
@@ -258,32 +243,73 @@ function CardEditPanel({
   const [aExpires,  setAExpires]  = useState(additionalOffer?.expires_at?.slice(0, 10) ?? '')
 
   function handleSave() {
-    const drafts: { id: string; draft: OfferDraft }[] = []
-    if (welcomeOffer) {
-      drafts.push({ id: welcomeOffer.id, draft: {
-        headline: wHeadline,
-        offer_type: 'welcome_bonus',
-        points_value: wPoints ? Number(wPoints) : null,
-        cashback_value: welcomeOffer.cashback_value,
-        spend_requirement: wSpend ? Number(wSpend) : null,
-        is_active: welcomeOffer.is_active,
-        is_limited_time: wLtd,
-        expires_at: wExpires || null,
-      }})
-    }
-    if (additionalOffer) {
-      drafts.push({ id: additionalOffer.id, draft: {
-        headline: aHeadline,
-        offer_type: 'additional_offer',
-        points_value: aPoints ? Number(aPoints) : null,
-        cashback_value: additionalOffer.cashback_value,
-        spend_requirement: aSpend ? Number(aSpend) : null,
-        is_active: additionalOffer.is_active,
-        is_limited_time: aLtd,
-        expires_at: aExpires || null,
-      }})
-    }
-    onSave(drafts)
+    setErr(null)
+    startTrans(async () => {
+      try {
+        // Welcome bonus: update if exists, create if headline or points filled
+        if (welcomeOffer) {
+          await updateOffer(welcomeOffer.id, {
+            headline: wHeadline,
+            offer_type: 'welcome_bonus',
+            points_value: wPoints ? Number(wPoints) : null,
+            cashback_value: welcomeOffer.cashback_value,
+            spend_requirement: wSpend ? Number(wSpend) : null,
+            is_active: welcomeOffer.is_active,
+            is_limited_time: wLtd,
+            expires_at: wExpires || null,
+          })
+        } else if (wHeadline.trim() || wPoints) {
+          await createOffer({
+            card_id: cardId,
+            headline: wHeadline.trim(),
+            offer_type: 'welcome_bonus',
+            points_value: wPoints ? Number(wPoints) : null,
+            cashback_value: null,
+            spend_requirement: wSpend ? Number(wSpend) : null,
+            source_name: 'manual',
+            source_priority: 9,
+            is_limited_time: wLtd,
+            expires_at: wExpires || null,
+            is_active: true,
+            review_status: 'approved',
+          })
+        }
+
+        // Additional bonus: update if exists, create if headline or points filled
+        if (additionalOffer) {
+          await updateOffer(additionalOffer.id, {
+            headline: aHeadline,
+            offer_type: 'additional_offer',
+            points_value: aPoints ? Number(aPoints) : null,
+            cashback_value: additionalOffer.cashback_value,
+            spend_requirement: aSpend ? Number(aSpend) : null,
+            is_active: additionalOffer.is_active,
+            is_limited_time: aLtd,
+            expires_at: aExpires || null,
+          })
+        } else if (aHeadline.trim() || aPoints) {
+          await createOffer({
+            card_id: cardId,
+            headline: aHeadline.trim(),
+            offer_type: 'additional_offer',
+            points_value: aPoints ? Number(aPoints) : null,
+            cashback_value: null,
+            spend_requirement: aSpend ? Number(aSpend) : null,
+            source_name: 'manual',
+            source_priority: 9,
+            is_limited_time: aLtd,
+            expires_at: aExpires || null,
+            is_active: true,
+            review_status: 'approved',
+          })
+        }
+
+        router.refresh()
+        onDone()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Save failed')
+      }
+    })
   }
 
   const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full'
@@ -295,22 +321,22 @@ function CardEditPanel({
         {/* Welcome Bonus */}
         <div className="space-y-2">
           <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide border-b border-blue-200 pb-1">
-            Welcome Bonus {!welcomeOffer && <span className="font-normal text-gray-400 normal-case">(none)</span>}
+            Welcome Bonus {!welcomeOffer && <span className="font-normal text-blue-400 normal-case">(new)</span>}
           </h4>
           <div>
             <label className={labelCls}>Headline</label>
-            <input value={wHeadline} onChange={e => setWHeadline(e.target.value)} className={inputCls} disabled={!welcomeOffer} />
+            <input value={wHeadline} onChange={e => setWHeadline(e.target.value)} className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Points</label>
-            <input type="number" value={wPoints} onChange={e => setWPoints(e.target.value)} placeholder="—" className={inputCls} disabled={!welcomeOffer} />
+            <input type="number" value={wPoints} onChange={e => setWPoints(e.target.value)} placeholder="—" className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Spend Req ($)</label>
-            <input type="number" value={wSpend} onChange={e => setWSpend(e.target.value)} placeholder="—" className={inputCls} disabled={!welcomeOffer} />
+            <input type="number" value={wSpend} onChange={e => setWSpend(e.target.value)} placeholder="—" className={inputCls} />
           </div>
           <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={wLtd} onChange={e => setWLtd(e.target.checked)} className="h-3.5 w-3.5" disabled={!welcomeOffer} />
+            <input type="checkbox" checked={wLtd} onChange={e => setWLtd(e.target.checked)} className="h-3.5 w-3.5" />
             Limited time
           </label>
           {wLtd && <input type="date" value={wExpires} onChange={e => setWExpires(e.target.value)} className={inputCls} />}
@@ -319,32 +345,32 @@ function CardEditPanel({
         {/* Additional Bonus */}
         <div className="space-y-2">
           <h4 className="text-xs font-semibold text-purple-700 uppercase tracking-wide border-b border-purple-200 pb-1">
-            Additional Bonus {!additionalOffer && <span className="font-normal text-gray-400 normal-case">(none)</span>}
+            Additional Bonus {!additionalOffer && <span className="font-normal text-purple-400 normal-case">(new)</span>}
           </h4>
           <div>
             <label className={labelCls}>Headline</label>
-            <input value={aHeadline} onChange={e => setAHeadline(e.target.value)} className={inputCls} disabled={!additionalOffer} />
+            <input value={aHeadline} onChange={e => setAHeadline(e.target.value)} className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Points</label>
-            <input type="number" value={aPoints} onChange={e => setAPoints(e.target.value)} placeholder="—" className={inputCls} disabled={!additionalOffer} />
+            <input type="number" value={aPoints} onChange={e => setAPoints(e.target.value)} placeholder="—" className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Spend Req ($)</label>
-            <input type="number" value={aSpend} onChange={e => setASpend(e.target.value)} placeholder="—" className={inputCls} disabled={!additionalOffer} />
+            <input type="number" value={aSpend} onChange={e => setASpend(e.target.value)} placeholder="—" className={inputCls} />
           </div>
           <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={aLtd} onChange={e => setALtd(e.target.checked)} className="h-3.5 w-3.5" disabled={!additionalOffer} />
+            <input type="checkbox" checked={aLtd} onChange={e => setALtd(e.target.checked)} className="h-3.5 w-3.5" />
             Limited time
           </label>
           {aLtd && <input type="date" value={aExpires} onChange={e => setAExpires(e.target.value)} className={inputCls} />}
         </div>
       </div>
 
-      <div className="flex gap-2 mt-4">
+      <div className="flex items-center gap-3 mt-4">
         <button
           onClick={handleSave}
-          disabled={isPending || (!welcomeOffer && !additionalOffer)}
+          disabled={isPending}
           className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-40"
         >
           {isPending ? 'Saving…' : 'Save'}
@@ -356,6 +382,7 @@ function CardEditPanel({
         >
           Cancel
         </button>
+        {err && <span className="text-xs text-red-600">{err}</span>}
       </div>
     </div>
   )
