@@ -10,6 +10,7 @@ export type OfferRow = {
   points_value: number | null
   cashback_value: number | null
   spend_requirement: number | null
+  spend_timeframe_days: number | null
   offer_type: string
   is_limited_time: boolean
   expires_at: string | null
@@ -39,7 +40,7 @@ export default async function ReviewPage() {
   // Fetch all pending offers with card info
   const { data: pendingRaw, error: e1 } = await supabaseAdmin
     .from('card_offers')
-    .select('id, card_id, headline, points_value, cashback_value, spend_requirement, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at, credit_cards!inner(name, slug)')
+    .select('id, card_id, headline, points_value, cashback_value, spend_requirement, spend_timeframe_days, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at, credit_cards!inner(name, slug)')
     .eq('review_status', 'pending_review')
     .order('scraped_at', { ascending: false })
 
@@ -48,14 +49,14 @@ export default async function ReviewPage() {
   const pendingCardIds = [...new Set((pendingRaw ?? []).map(o => o.card_id))]
 
   // Active offers + card details for the same cards
-  type ActiveOfferRaw = { id: string; card_id: string; headline: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; offer_type: string; is_limited_time: boolean; expires_at: string | null; source_priority: number; source_name: string | null; review_status: string; is_active: boolean; scraped_at: string }
+  type ActiveOfferRaw = { id: string; card_id: string; headline: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; spend_timeframe_days: number | null; offer_type: string; is_limited_time: boolean; expires_at: string | null; source_priority: number; source_name: string | null; review_status: string; is_active: boolean; scraped_at: string }
   type CardDetailRaw = { id: string; name: string; slug: string; tier: string; annual_fee: number | null; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; is_active: boolean }
 
   const [{ data: activeRaw }, { data: cardDetails }] = await Promise.all([
     pendingCardIds.length
       ? supabaseAdmin
           .from('card_offers')
-          .select('id, card_id, headline, points_value, cashback_value, spend_requirement, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at')
+          .select('id, card_id, headline, points_value, cashback_value, spend_requirement, spend_timeframe_days, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at')
           .eq('is_active', true)
           .in('card_id', pendingCardIds)
       : Promise.resolve({ data: [] as ActiveOfferRaw[] }),

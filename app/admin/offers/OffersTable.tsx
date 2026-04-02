@@ -18,6 +18,7 @@ type Offer = {
   points_value: number | null
   cashback_value: number | null
   spend_requirement: number | null
+  spend_timeframe_days: number | null
   is_active: boolean
   offer_type: string
   source_priority: number | null
@@ -32,9 +33,21 @@ type CardRow = {
   cardName: string
   cardId: string
   welcomeOffer: Offer | null
-  additionalOffer: Offer | null
+  additionalOffers: Offer[]
+  cashbackValue: number | null
   source_priority: number | null
   is_limited_time: boolean
+}
+
+type AdditionalDraft = {
+  id: string | undefined
+  points: string
+  cash: string
+  spend: string
+  timeframeDays: string
+  ltd: boolean
+  expires: string
+  is_active: boolean
 }
 
 type CardOption = { id: string; name: string; slug: string }
@@ -71,12 +84,19 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
   }
 
   const cardRows: CardRow[] = [...grouped.entries()].map(([slug, g]) => {
-    const welcome    = g.offers.find(o => o.offer_type === 'welcome_bonus')    ?? null
-    const additional = g.offers.find(o => o.offer_type === 'additional_offer') ?? null
-    const priorities = [welcome, additional].filter(Boolean).map(o => o!.source_priority ?? 9)
+    const welcome     = g.offers.find(o => o.offer_type === 'welcome_bonus') ?? null
+    const additionals = g.offers.filter(o => o.offer_type === 'additional_offer')
+    const allOffers   = [welcome, ...additionals].filter((o): o is Offer => o !== null)
+    const priorities  = allOffers.map(o => o.source_priority ?? 9)
     const sourcePriority = priorities.length > 0 ? Math.min(...priorities) : null
-    const isLtd = [welcome, additional].some(o => o?.is_limited_time)
-    return { cardSlug: slug, cardName: g.cardName, cardId: g.offers[0]?.card_id ?? '', welcomeOffer: welcome, additionalOffer: additional, source_priority: sourcePriority, is_limited_time: isLtd }
+    const isLtd = allOffers.some(o => o.is_limited_time)
+    const cashbacks = allOffers.map(o => o.cashback_value).filter((v): v is number => v != null)
+    const cashbackValue = cashbacks.length > 0 ? Math.max(...cashbacks) : null
+    return {
+      cardSlug: slug, cardName: g.cardName, cardId: g.offers[0]?.card_id ?? '',
+      welcomeOffer: welcome, additionalOffers: additionals,
+      cashbackValue, source_priority: sourcePriority, is_limited_time: isLtd,
+    }
   })
 
   async function handleCreate(draft: {
@@ -146,6 +166,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
               <th className="px-4 py-2 text-left">Card</th>
               <th className="px-4 py-2 text-right text-blue-600">Welcome Pts</th>
               <th className="px-4 py-2 text-right text-purple-600">Additional Pts</th>
+              <th className="px-4 py-2 text-right text-green-600">Cash</th>
               <th className="px-4 py-2 text-left">Source</th>
               <th className="px-4 py-2 text-left">Ltd.</th>
               <th className="px-4 py-2 text-left">Actions</th>
@@ -165,8 +186,13 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-purple-600 font-medium">
-                    {row.additionalOffer?.points_value != null
-                      ? row.additionalOffer.points_value.toLocaleString()
+                    {row.additionalOffers.length > 0
+                      ? row.additionalOffers.map(o => o.points_value?.toLocaleString() ?? '—').join(' + ')
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-green-600 font-medium">
+                    {row.cashbackValue != null
+                      ? `$${row.cashbackValue % 1 === 0 ? row.cashbackValue : row.cashbackValue.toFixed(2)}`
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3">
@@ -193,7 +219,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
                           if (!window.confirm(`Delete ${row.cardName} and all its offers?`)) return
                           startTrans(async () => {
                             if (row.welcomeOffer) await deleteOffer(row.welcomeOffer.id)
-                            if (row.additionalOffer) await deleteOffer(row.additionalOffer.id)
+                            for (const a of row.additionalOffers) await deleteOffer(a.id)
                             router.refresh()
                           })
                         }}
@@ -207,10 +233,10 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
                 </tr>
                 {editingCard === row.cardSlug && (
                   <tr>
-                    <td colSpan={6} className="p-0">
+                    <td colSpan={7} className="p-0">
                       <CardEditPanel
                         welcomeOffer={row.welcomeOffer}
-                        additionalOffer={row.additionalOffer}
+                        additionalOffers={row.additionalOffers}
                         cardId={row.cardId}
                         onDone={() => setEditingCard(null)}
                         onCancel={() => setEditingCard(null)}
@@ -221,7 +247,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
               </React.Fragment>
             ))}
             {cardRows.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">No offers found</td></tr>
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">No offers found</td></tr>
             )}
           </tbody>
         </table>
@@ -234,10 +260,10 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
 // ── Card Edit Panel ───────────────────────────────────────────────────────────
 
 function CardEditPanel({
-  welcomeOffer, additionalOffer, cardId, onDone, onCancel,
+  welcomeOffer, additionalOffers, cardId, onDone, onCancel,
 }: {
   welcomeOffer: Offer | null
-  additionalOffer: Offer | null
+  additionalOffers: Offer[]
   cardId: string
   onDone: () => void
   onCancel: () => void
@@ -246,41 +272,59 @@ function CardEditPanel({
   const [err, setErr]           = useState<string | null>(null)
   const router = useRouter()
 
-  const [headline,  setHeadline]  = useState(welcomeOffer?.headline ?? additionalOffer?.headline ?? '')
-  const [wPoints,   setWPoints]   = useState(welcomeOffer?.points_value?.toString() ?? '')
-  const [wSpend,    setWSpend]    = useState(welcomeOffer?.spend_requirement?.toString() ?? '')
-  const [wLtd,      setWLtd]      = useState(welcomeOffer?.is_limited_time ?? false)
-  const [wExpires,  setWExpires]  = useState(welcomeOffer?.expires_at?.slice(0, 10) ?? '')
+  const [headline,   setHeadline]   = useState(welcomeOffer?.headline ?? additionalOffers[0]?.headline ?? '')
+  const [wPoints,    setWPoints]    = useState(welcomeOffer?.points_value?.toString() ?? '')
+  const [wCash,      setWCash]      = useState(welcomeOffer?.cashback_value?.toString() ?? '')
+  const [wSpend,     setWSpend]     = useState(welcomeOffer?.spend_requirement?.toString() ?? '')
+  const [wTimeframe, setWTimeframe] = useState(
+    welcomeOffer?.spend_timeframe_days ? Math.round(welcomeOffer.spend_timeframe_days / 30).toString() : ''
+  )
+  const [wLtd,       setWLtd]       = useState(welcomeOffer?.is_limited_time ?? false)
+  const [wExpires,   setWExpires]   = useState(welcomeOffer?.expires_at?.slice(0, 10) ?? '')
 
-  const [aPoints,   setAPoints]   = useState(additionalOffer?.points_value?.toString() ?? '')
-  const [aSpend,    setASpend]    = useState(additionalOffer?.spend_requirement?.toString() ?? '')
-  const [aLtd,      setALtd]      = useState(additionalOffer?.is_limited_time ?? false)
-  const [aExpires,  setAExpires]  = useState(additionalOffer?.expires_at?.slice(0, 10) ?? '')
+  const [additionalDrafts, setAdditionalDrafts] = useState<AdditionalDraft[]>(() =>
+    additionalOffers.map(o => ({
+      id: o.id,
+      points: o.points_value?.toString() ?? '',
+      cash: o.cashback_value?.toString() ?? '',
+      spend: o.spend_requirement?.toString() ?? '',
+      timeframeDays: o.spend_timeframe_days ? Math.round(o.spend_timeframe_days / 30).toString() : '',
+      ltd: o.is_limited_time,
+      expires: o.expires_at?.slice(0, 10) ?? '',
+      is_active: o.is_active,
+    }))
+  )
+
+  function updateDraft(index: number, patch: Partial<AdditionalDraft>) {
+    setAdditionalDrafts(prev => prev.map((d, i) => i === index ? { ...d, ...patch } : d))
+  }
 
   function handleSave() {
     setErr(null)
     startTrans(async () => {
       try {
-        // Welcome bonus: update if exists, create if headline or points filled
+        // Welcome bonus
         if (welcomeOffer) {
           await updateOffer(welcomeOffer.id, {
             headline,
             offer_type: 'welcome_bonus',
             points_value: wPoints ? Number(wPoints) : null,
-            cashback_value: welcomeOffer.cashback_value,
+            cashback_value: wCash ? Number(wCash) : null,
             spend_requirement: wSpend ? Number(wSpend) : null,
+            spend_timeframe_days: wTimeframe ? Number(wTimeframe) * 30 : null,
             is_active: welcomeOffer.is_active,
             is_limited_time: wLtd,
             expires_at: wExpires || null,
           })
-        } else if (headline.trim() || wPoints) {
+        } else if (headline.trim() || wPoints || wCash) {
           await createOffer({
             card_id: cardId,
             headline: headline.trim(),
             offer_type: 'welcome_bonus',
             points_value: wPoints ? Number(wPoints) : null,
-            cashback_value: null,
+            cashback_value: wCash ? Number(wCash) : null,
             spend_requirement: wSpend ? Number(wSpend) : null,
+            spend_timeframe_days: wTimeframe ? Number(wTimeframe) * 30 : null,
             source_name: 'manual',
             source_priority: 9,
             is_limited_time: wLtd,
@@ -290,33 +334,38 @@ function CardEditPanel({
           })
         }
 
-        // Additional bonus: update if exists, create if headline or points filled
-        if (additionalOffer) {
-          await updateOffer(additionalOffer.id, {
-            headline,
-            offer_type: 'additional_offer',
-            points_value: aPoints ? Number(aPoints) : null,
-            cashback_value: additionalOffer.cashback_value,
-            spend_requirement: aSpend ? Number(aSpend) : null,
-            is_active: additionalOffer.is_active,
-            is_limited_time: aLtd,
-            expires_at: aExpires || null,
-          })
-        } else if (headline.trim() || aPoints) {
-          await createOffer({
-            card_id: cardId,
-            headline: headline.trim(),
-            offer_type: 'additional_offer',
-            points_value: aPoints ? Number(aPoints) : null,
-            cashback_value: null,
-            spend_requirement: aSpend ? Number(aSpend) : null,
-            source_name: 'manual',
-            source_priority: 9,
-            is_limited_time: aLtd,
-            expires_at: aExpires || null,
-            is_active: true,
-            review_status: 'approved',
-          })
+        // Additional bonuses — update existing, create new
+        for (const draft of additionalDrafts) {
+          if (draft.id) {
+            const orig = additionalOffers.find(o => o.id === draft.id)
+            await updateOffer(draft.id, {
+              headline,
+              offer_type: 'additional_offer',
+              points_value: draft.points ? Number(draft.points) : null,
+              cashback_value: draft.cash ? Number(draft.cash) : null,
+              spend_requirement: draft.spend ? Number(draft.spend) : null,
+              spend_timeframe_days: draft.timeframeDays ? Number(draft.timeframeDays) * 30 : null,
+              is_active: orig?.is_active ?? true,
+              is_limited_time: draft.ltd,
+              expires_at: draft.expires || null,
+            })
+          } else if (headline.trim() || draft.points || draft.cash) {
+            await createOffer({
+              card_id: cardId,
+              headline: headline.trim(),
+              offer_type: 'additional_offer',
+              points_value: draft.points ? Number(draft.points) : null,
+              cashback_value: draft.cash ? Number(draft.cash) : null,
+              spend_requirement: draft.spend ? Number(draft.spend) : null,
+              spend_timeframe_days: draft.timeframeDays ? Number(draft.timeframeDays) * 30 : null,
+              source_name: 'manual',
+              source_priority: 9,
+              is_limited_time: draft.ltd,
+              expires_at: draft.expires || null,
+              is_active: true,
+              review_status: 'approved',
+            })
+          }
         }
 
         router.refresh()
@@ -329,11 +378,12 @@ function CardEditPanel({
 
   const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full'
   const labelCls = 'block text-xs text-gray-500 mb-1'
+  const cardName = welcomeOffer?.card?.name ?? additionalOffers[0]?.card?.name ?? 'this card'
 
   return (
     <div className="px-5 py-4 bg-blue-50 border-t border-b border-blue-100">
       <div className="mb-4">
-        <label className={labelCls}>Headline <span className="text-gray-400 font-normal normal-case">(shared for both bonuses)</span></label>
+        <label className={labelCls}>Headline <span className="text-gray-400 font-normal normal-case">(shared for all bonuses)</span></label>
         <input value={headline} onChange={e => setHeadline(e.target.value)} className={inputCls} />
       </div>
       <div className="grid grid-cols-2 gap-6">
@@ -347,8 +397,16 @@ function CardEditPanel({
             <input type="number" value={wPoints} onChange={e => setWPoints(e.target.value)} placeholder="—" className={inputCls} />
           </div>
           <div>
+            <label className={labelCls}>Cashback ($)</label>
+            <input type="number" step="0.01" value={wCash} onChange={e => setWCash(e.target.value)} placeholder="—" className={inputCls} />
+          </div>
+          <div>
             <label className={labelCls}>Spend Req ($)</label>
             <input type="number" value={wSpend} onChange={e => setWSpend(e.target.value)} placeholder="—" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Timeframe (months)</label>
+            <input type="number" value={wTimeframe} onChange={e => setWTimeframe(e.target.value)} placeholder="—" className={inputCls} />
           </div>
           <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
             <input type="checkbox" checked={wLtd} onChange={e => setWLtd(e.target.checked)} className="h-3.5 w-3.5" />
@@ -358,7 +416,7 @@ function CardEditPanel({
           {welcomeOffer && (
             <button
               onClick={() => {
-                if (!window.confirm(`Delete welcome bonus offer for ${welcomeOffer.card?.name ?? 'this card'}?`)) return
+                if (!window.confirm(`Delete welcome bonus offer for ${cardName}?`)) return
                 startTrans(async () => { await deleteOffer(welcomeOffer.id); router.refresh(); onDone() })
               }}
               disabled={isPending}
@@ -369,36 +427,76 @@ function CardEditPanel({
           )}
         </div>
 
-        {/* Additional Bonus */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-purple-700 uppercase tracking-wide border-b border-purple-200 pb-1">
-            Additional Bonus {!additionalOffer && <span className="font-normal text-purple-400 normal-case">(new)</span>}
-          </h4>
-          <div>
-            <label className={labelCls}>Points</label>
-            <input type="number" value={aPoints} onChange={e => setAPoints(e.target.value)} placeholder="—" className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Spend Req ($)</label>
-            <input type="number" value={aSpend} onChange={e => setASpend(e.target.value)} placeholder="—" className={inputCls} />
-          </div>
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={aLtd} onChange={e => setALtd(e.target.checked)} className="h-3.5 w-3.5" />
-            Limited time
-          </label>
-          {aLtd && <input type="date" value={aExpires} onChange={e => setAExpires(e.target.value)} className={inputCls} />}
-          {additionalOffer && (
-            <button
-              onClick={() => {
-                if (!window.confirm(`Delete additional bonus offer for ${additionalOffer.card?.name ?? 'this card'}?`)) return
-                startTrans(async () => { await deleteOffer(additionalOffer.id); router.refresh(); onDone() })
-              }}
-              disabled={isPending}
-              className="text-xs text-red-500 hover:underline disabled:opacity-40 pt-1 block"
-            >
-              Delete
-            </button>
+        {/* Additional Bonuses */}
+        <div className="space-y-4">
+          {additionalDrafts.length === 0 && (
+            <h4 className="text-xs font-semibold text-purple-700 uppercase tracking-wide border-b border-purple-200 pb-1">
+              Additional Bonus <span className="font-normal text-purple-400 normal-case">(none yet)</span>
+            </h4>
           )}
+          {additionalDrafts.map((draft, i) => {
+            const origOffer = additionalOffers.find(o => o.id === draft.id)
+            return (
+              <div key={draft.id ?? `new-${i}`} className="space-y-2">
+                <h4 className="text-xs font-semibold text-purple-700 uppercase tracking-wide border-b border-purple-200 pb-1">
+                  {additionalDrafts.length > 1 ? `Additional Bonus ${i + 1}` : 'Additional Bonus'}
+                  {!draft.id && <span className="font-normal text-purple-400 normal-case"> (new)</span>}
+                </h4>
+                <div>
+                  <label className={labelCls}>Points</label>
+                  <input type="number" value={draft.points} onChange={e => updateDraft(i, { points: e.target.value })} placeholder="—" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Cashback ($)</label>
+                  <input type="number" step="0.01" value={draft.cash} onChange={e => updateDraft(i, { cash: e.target.value })} placeholder="—" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Spend Req ($)</label>
+                  <input type="number" value={draft.spend} onChange={e => updateDraft(i, { spend: e.target.value })} placeholder="—" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Timeframe (months)</label>
+                  <input type="number" value={draft.timeframeDays} onChange={e => updateDraft(i, { timeframeDays: e.target.value })} placeholder="—" className={inputCls} />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                  <input type="checkbox" checked={draft.ltd} onChange={e => updateDraft(i, { ltd: e.target.checked })} className="h-3.5 w-3.5" />
+                  Limited time
+                </label>
+                {draft.ltd && <input type="date" value={draft.expires} onChange={e => updateDraft(i, { expires: e.target.value })} className={inputCls} />}
+                {draft.id && origOffer && (
+                  <button
+                    onClick={() => {
+                      if (!window.confirm('Delete this additional bonus?')) return
+                      startTrans(async () => { await deleteOffer(origOffer.id); router.refresh(); onDone() })
+                    }}
+                    disabled={isPending}
+                    className="text-xs text-red-500 hover:underline disabled:opacity-40 pt-1 block"
+                  >
+                    Delete
+                  </button>
+                )}
+                {!draft.id && (
+                  <button
+                    onClick={() => setAdditionalDrafts(prev => prev.filter((_, idx) => idx !== i))}
+                    disabled={isPending}
+                    className="text-xs text-gray-400 hover:text-red-500 hover:underline disabled:opacity-40 pt-1 block"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            )
+          })}
+          <button
+            onClick={() => setAdditionalDrafts(prev => [
+              ...prev,
+              { id: undefined, points: '', cash: '', spend: '', timeframeDays: '', ltd: false, expires: '', is_active: true },
+            ])}
+            disabled={isPending}
+            className="text-xs text-purple-600 hover:underline disabled:opacity-40"
+          >
+            + Add Another Bonus
+          </button>
         </div>
       </div>
 
@@ -422,10 +520,10 @@ function CardEditPanel({
       <div className="pt-2 border-t border-blue-100 mt-2">
         <button
           onClick={() => {
-            if (!window.confirm(`Delete ${welcomeOffer?.card?.name ?? 'this card'} and all its offers? Cannot be undone.`)) return
+            if (!window.confirm(`Delete ${cardName} and all its offers? Cannot be undone.`)) return
             startTrans(async () => {
               if (welcomeOffer) await deleteOffer(welcomeOffer.id)
-              if (additionalOffer) await deleteOffer(additionalOffer.id)
+              for (const o of additionalOffers) await deleteOffer(o.id)
               router.refresh()
               onDone()
             })

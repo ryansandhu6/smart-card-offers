@@ -9,7 +9,7 @@ export default async function OffersPage() {
       .from('card_offers')
       .select(`
         id, card_id, headline, points_value, cashback_value, spend_requirement,
-        is_active, offer_type, source_priority, source_name,
+        spend_timeframe_days, is_active, offer_type, source_priority, source_name,
         is_limited_time, expires_at,
         card:credit_cards ( name, slug )
       `)
@@ -28,6 +28,7 @@ export default async function OffersPage() {
   type OfferRow = {
     id: string; card_id: string; headline: string; points_value: number | null
     cashback_value: number | null; spend_requirement: number | null
+    spend_timeframe_days: number | null
     is_active: boolean; offer_type: string
     source_priority: number | null; source_name: string | null
     is_limited_time: boolean; expires_at: string | null
