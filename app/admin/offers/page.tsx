@@ -8,7 +8,7 @@ export default async function OffersPage() {
     supabaseAdmin
       .from('card_offers')
       .select(`
-        id, headline, points_value, cashback_value, spend_requirement,
+        id, card_id, headline, points_value, cashback_value, spend_requirement,
         is_active, offer_type, source_priority, source_name,
         is_limited_time, expires_at,
         card:credit_cards ( name, slug )
@@ -26,7 +26,7 @@ export default async function OffersPage() {
   if (error) return <p className="text-red-600">Failed to load offers: {error.message}</p>
 
   type OfferRow = {
-    id: string; headline: string; points_value: number | null
+    id: string; card_id: string; headline: string; points_value: number | null
     cashback_value: number | null; spend_requirement: number | null
     is_active: boolean; offer_type: string
     source_priority: number | null; source_name: string | null

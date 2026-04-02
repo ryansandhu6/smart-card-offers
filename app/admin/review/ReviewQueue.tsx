@@ -6,7 +6,6 @@ import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 import type { CardGroup, OfferRow } from './page'
 
 const TIERS = ['no-fee', 'entry', 'mid', 'premium', 'super-premium'] as const
-const OFFER_TYPES = ['welcome_bonus', 'additional_offer', 'referral'] as const
 
 export default function ReviewQueue({ groups }: { groups: CardGroup[] }) {
   return (
@@ -19,21 +18,21 @@ export default function ReviewQueue({ groups }: { groups: CardGroup[] }) {
 }
 
 function CardSection({ group }: { group: CardGroup }) {
-  const hasActive = group.active.length > 0
-  const [showEdit, setShowEdit] = useState(false)
-  const [isPending, startTrans] = useTransition()
-  const [saveErr, setSaveErr] = useState<string | null>(null)
-  const [savedOk, setSavedOk] = useState(false)
+  const [showEdit,       setShowEdit]       = useState(false)
+  const [showEditOffers, setShowEditOffers] = useState(false)
+  const [isPending,      startTrans]        = useTransition()
+  const [saveErr,        setSaveErr]        = useState<string | null>(null)
+  const [savedOk,        setSavedOk]        = useState(false)
   const router = useRouter()
 
   // Card edit state
-  const [cardName,     setCardName]     = useState(group.card_name)
-  const [cardTier,     setCardTier]     = useState(group.card_tier)
-  const [annualFee,    setAnnualFee]    = useState(group.card_annual_fee?.toString() ?? '0')
-  const [fyf,          setFyf]          = useState(group.card_annual_fee_waived)
-  const [description,  setDescription]  = useState(group.card_description ?? '')
-  const [referralUrl,  setReferralUrl]  = useState(group.card_referral_url ?? '')
-  const [imageUrl,     setImageUrl]     = useState(group.card_image_url ?? '')
+  const [cardName,    setCardName]    = useState(group.card_name)
+  const [cardTier,    setCardTier]    = useState(group.card_tier)
+  const [annualFee,   setAnnualFee]   = useState(group.card_annual_fee?.toString() ?? '0')
+  const [fyf,         setFyf]         = useState(group.card_annual_fee_waived)
+  const [description, setDescription] = useState(group.card_description ?? '')
+  const [referralUrl, setReferralUrl] = useState(group.card_referral_url ?? '')
+  const [imageUrl,    setImageUrl]    = useState(group.card_image_url ?? '')
 
   function handleSaveCard() {
     setSaveErr(null)
@@ -58,10 +57,33 @@ function CardSection({ group }: { group: CardGroup }) {
     })
   }
 
-  const feeLabel = (group.card_annual_fee ?? 0) === 0
-    ? 'No Fee'
-    : `$${group.card_annual_fee}/yr`
+  const ORDER: Record<string, number> = { welcome_bonus: 0, additional_offer: 1, referral: 2 }
+  const sortedPending = [...group.pending].sort((a, b) => (ORDER[a.offer_type] ?? 9) - (ORDER[b.offer_type] ?? 9))
+  const sortedActive  = [...group.active ].sort((a, b) => (ORDER[a.offer_type] ?? 9) - (ORDER[b.offer_type] ?? 9))
 
+  const welcomePending    = sortedPending.find(o => o.offer_type === 'welcome_bonus')
+  const additionalPending = sortedPending.find(o => o.offer_type === 'additional_offer')
+  const welcomeActive     = sortedActive.find(o => o.offer_type === 'welcome_bonus')
+  const additionalActive  = sortedActive.find(o => o.offer_type === 'additional_offer')
+
+  const pendingIsLtd = [welcomePending, additionalPending].some(o => o?.is_limited_time)
+  const activeIsLtd  = [welcomeActive,  additionalActive ].some(o => o?.is_limited_time)
+
+  function activateAll() {
+    startTrans(async () => {
+      await Promise.all(sortedPending.map(o => approveOffer(o.id)))
+      router.refresh()
+    })
+  }
+
+  function trashAll() {
+    startTrans(async () => {
+      await Promise.all(sortedPending.map(o => rejectOffer(o.id)))
+      router.refresh()
+    })
+  }
+
+  const feeLabel = (group.card_annual_fee ?? 0) === 0 ? 'No Fee' : `$${group.card_annual_fee}/yr`
   const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full'
 
   return (
@@ -74,9 +96,6 @@ function CardSection({ group }: { group: CardGroup }) {
         <span className="text-xs text-gray-500">{feeLabel}</span>
         {group.card_annual_fee_waived && (
           <span className="text-xs bg-green-100 text-green-700 rounded px-1.5 py-0.5">FYF</span>
-        )}
-        {!hasActive && (
-          <span className="ml-auto text-xs text-gray-400 italic">no existing active offer</span>
         )}
         <button
           onClick={() => { setShowEdit(v => !v); setSavedOk(false); setSaveErr(null) }}
@@ -140,70 +159,290 @@ function CardSection({ group }: { group: CardGroup }) {
             >
               {isPending ? 'Saving…' : 'Save Card'}
             </button>
-            {savedOk && <span className="text-xs text-green-600">Saved</span>}
-            {saveErr && <span className="text-xs text-red-600">{saveErr}</span>}
+            {savedOk  && <span className="text-xs text-green-600">Saved</span>}
+            {saveErr  && <span className="text-xs text-red-600">{saveErr}</span>}
           </div>
         </div>
       )}
 
-      {/* Comparison table */}
+      {/* Offer summary table */}
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b text-gray-500 text-xs uppercase tracking-wide">
           <tr>
             <Th>Source</Th>
-            <Th>Value</Th>
+            <Th>Welcome Pts</Th>
+            <Th>Additional Pts</Th>
             <Th>Headline</Th>
-            <Th>Scraped</Th>
+            <Th>Ltd.</Th>
             <Th>Status</Th>
             <Th>Actions</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {/* Active offers first — read-only comparison rows */}
-          {[...group.active].sort((a, b) => {
-            const order: Record<string, number> = { welcome_bonus: 0, additional_offer: 1, referral: 2 }
-            return (order[a.offer_type] ?? 9) - (order[b.offer_type] ?? 9)
-          }).map(o => (
-            <ActiveRow key={o.id} offer={o} />
-          ))}
-          {/* Pending offers — actionable */}
-          {[...group.pending].sort((a, b) => {
-            const order: Record<string, number> = { welcome_bonus: 0, additional_offer: 1, referral: 2 }
-            return (order[a.offer_type] ?? 9) - (order[b.offer_type] ?? 9)
-          }).map(o => (
-            <PendingRow key={o.id} offer={o} hasActive={hasActive} />
-          ))}
+          {/* Active summary row — read-only comparison */}
+          {(welcomeActive || additionalActive) && (
+            <tr className="bg-green-50 opacity-80">
+              <td className="px-4 py-2.5">
+                <SourceBadge priority={Math.min(
+                  ...[welcomeActive, additionalActive].filter(Boolean).map(o => o!.source_priority)
+                )} />
+              </td>
+              <td className="px-4 py-2.5 tabular-nums text-blue-600 font-medium">
+                {welcomeActive?.points_value?.toLocaleString('en-CA') ?? <span className="text-gray-300">—</span>}
+              </td>
+              <td className="px-4 py-2.5 tabular-nums text-purple-600 font-medium">
+                {additionalActive?.points_value?.toLocaleString('en-CA') ?? <span className="text-gray-300">—</span>}
+              </td>
+              <td className="px-4 py-2.5 text-gray-600 max-w-xs truncate">
+                {welcomeActive?.headline ?? additionalActive?.headline ?? '—'}
+              </td>
+              <td className="px-4 py-2.5">
+                {activeIsLtd && <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">Ltd.</span>}
+              </td>
+              <td className="px-4 py-2.5">
+                <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">active</span>
+              </td>
+              <td className="px-4 py-2.5 text-gray-400 text-xs italic">current</td>
+            </tr>
+          )}
+
+          {/* Pending summary row */}
+          {(welcomePending || additionalPending) && (
+            <tr className="bg-amber-50">
+              <td className="px-4 py-2.5">
+                <SourceBadge priority={Math.min(
+                  ...[welcomePending, additionalPending].filter(Boolean).map(o => o!.source_priority)
+                )} />
+              </td>
+              <td className="px-4 py-2.5 tabular-nums text-blue-600 font-medium">
+                {welcomePending?.points_value?.toLocaleString('en-CA') ?? <span className="text-gray-300">—</span>}
+              </td>
+              <td className="px-4 py-2.5 tabular-nums text-purple-600 font-medium">
+                {additionalPending?.points_value?.toLocaleString('en-CA') ?? <span className="text-gray-300">—</span>}
+              </td>
+              <td className="px-4 py-2.5 text-gray-700 max-w-xs truncate">
+                {welcomePending?.headline ?? additionalPending?.headline ?? '—'}
+              </td>
+              <td className="px-4 py-2.5">
+                {pendingIsLtd && <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">Ltd.</span>}
+              </td>
+              <td className="px-4 py-2.5">
+                <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">pending</span>
+              </td>
+              <td className="px-4 py-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setShowEditOffers(v => !v)}
+                    disabled={isPending}
+                    className="text-xs text-blue-600 hover:underline disabled:opacity-40"
+                  >
+                    {showEditOffers ? 'Close' : 'Edit'}
+                  </button>
+                  <button
+                    onClick={activateAll}
+                    disabled={isPending}
+                    className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 disabled:opacity-40"
+                  >
+                    Activate All
+                  </button>
+                  <button
+                    onClick={trashAll}
+                    disabled={isPending}
+                    className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 disabled:opacity-40"
+                  >
+                    Trash All
+                  </button>
+                </div>
+              </td>
+            </tr>
+          )}
+
+          {/* Inline offer edit panel */}
+          {showEditOffers && (
+            <tr>
+              <td colSpan={7} className="p-0">
+                <ReviewOfferEditPanel
+                  welcomeOffer={welcomePending ?? null}
+                  additionalOffer={additionalPending ?? null}
+                  isPending={isPending}
+                  onSave={(drafts) => {
+                    startTrans(async () => {
+                      await Promise.all(drafts.map(({ id, draft }) => updateOffer(id, draft)))
+                      router.refresh()
+                      setShowEditOffers(false)
+                    })
+                  }}
+                  onCancel={() => setShowEditOffers(false)}
+                />
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
+
       <AddOfferPanel cardId={group.card_id} />
     </section>
+  )
+}
+
+// ── Inline offer edit panel ───────────────────────────────────────────────────
+
+type OfferDraft = {
+  headline: string; offer_type: string
+  points_value: number | null; cashback_value: number | null
+  spend_requirement: number | null; is_active: boolean
+  is_limited_time: boolean; expires_at: string | null
+}
+
+function ReviewOfferEditPanel({
+  welcomeOffer, additionalOffer, isPending, onSave, onCancel,
+}: {
+  welcomeOffer: OfferRow | null
+  additionalOffer: OfferRow | null
+  isPending: boolean
+  onSave: (drafts: { id: string; draft: OfferDraft }[]) => void
+  onCancel: () => void
+}) {
+  const [wHeadline, setWHeadline] = useState(welcomeOffer?.headline ?? '')
+  const [wPoints,   setWPoints]   = useState(welcomeOffer?.points_value?.toString() ?? '')
+  const [wSpend,    setWSpend]    = useState(welcomeOffer?.spend_requirement?.toString() ?? '')
+  const [wLtd,      setWLtd]      = useState(welcomeOffer?.is_limited_time ?? false)
+  const [wExpires,  setWExpires]  = useState(welcomeOffer?.expires_at?.slice(0, 10) ?? '')
+
+  const [aHeadline, setAHeadline] = useState(additionalOffer?.headline ?? '')
+  const [aPoints,   setAPoints]   = useState(additionalOffer?.points_value?.toString() ?? '')
+  const [aSpend,    setASpend]    = useState(additionalOffer?.spend_requirement?.toString() ?? '')
+  const [aLtd,      setALtd]      = useState(additionalOffer?.is_limited_time ?? false)
+  const [aExpires,  setAExpires]  = useState(additionalOffer?.expires_at?.slice(0, 10) ?? '')
+
+  function handleSave() {
+    const drafts: { id: string; draft: OfferDraft }[] = []
+    if (welcomeOffer) {
+      drafts.push({ id: welcomeOffer.id, draft: {
+        headline: wHeadline,
+        offer_type: 'welcome_bonus',
+        points_value: wPoints ? Number(wPoints) : null,
+        cashback_value: welcomeOffer.cashback_value,
+        spend_requirement: wSpend ? Number(wSpend) : null,
+        is_active: welcomeOffer.is_active,
+        is_limited_time: wLtd,
+        expires_at: wExpires || null,
+      }})
+    }
+    if (additionalOffer) {
+      drafts.push({ id: additionalOffer.id, draft: {
+        headline: aHeadline,
+        offer_type: 'additional_offer',
+        points_value: aPoints ? Number(aPoints) : null,
+        cashback_value: additionalOffer.cashback_value,
+        spend_requirement: aSpend ? Number(aSpend) : null,
+        is_active: additionalOffer.is_active,
+        is_limited_time: aLtd,
+        expires_at: aExpires || null,
+      }})
+    }
+    onSave(drafts)
+  }
+
+  const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400 w-full'
+  const labelCls = 'block text-xs text-gray-500 mb-1'
+
+  return (
+    <div className="px-5 py-4 bg-amber-50 border-t border-amber-100">
+      <div className="grid grid-cols-2 gap-6">
+        {/* Welcome Bonus */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide border-b border-blue-200 pb-1">
+            Welcome Bonus {!welcomeOffer && <span className="font-normal text-gray-400 normal-case">(none)</span>}
+          </h4>
+          <div>
+            <label className={labelCls}>Headline</label>
+            <input value={wHeadline} onChange={e => setWHeadline(e.target.value)} className={inputCls} disabled={!welcomeOffer} />
+          </div>
+          <div>
+            <label className={labelCls}>Points</label>
+            <input type="number" value={wPoints} onChange={e => setWPoints(e.target.value)} placeholder="—" className={inputCls} disabled={!welcomeOffer} />
+          </div>
+          <div>
+            <label className={labelCls}>Spend Req ($)</label>
+            <input type="number" value={wSpend} onChange={e => setWSpend(e.target.value)} placeholder="—" className={inputCls} disabled={!welcomeOffer} />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={wLtd} onChange={e => setWLtd(e.target.checked)} className="h-3.5 w-3.5" disabled={!welcomeOffer} />
+            Limited time
+          </label>
+          {wLtd && <input type="date" value={wExpires} onChange={e => setWExpires(e.target.value)} className={inputCls} />}
+        </div>
+
+        {/* Additional Bonus */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-semibold text-purple-700 uppercase tracking-wide border-b border-purple-200 pb-1">
+            Additional Bonus {!additionalOffer && <span className="font-normal text-gray-400 normal-case">(none)</span>}
+          </h4>
+          <div>
+            <label className={labelCls}>Headline</label>
+            <input value={aHeadline} onChange={e => setAHeadline(e.target.value)} className={inputCls} disabled={!additionalOffer} />
+          </div>
+          <div>
+            <label className={labelCls}>Points</label>
+            <input type="number" value={aPoints} onChange={e => setAPoints(e.target.value)} placeholder="—" className={inputCls} disabled={!additionalOffer} />
+          </div>
+          <div>
+            <label className={labelCls}>Spend Req ($)</label>
+            <input type="number" value={aSpend} onChange={e => setASpend(e.target.value)} placeholder="—" className={inputCls} disabled={!additionalOffer} />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={aLtd} onChange={e => setALtd(e.target.checked)} className="h-3.5 w-3.5" disabled={!additionalOffer} />
+            Limited time
+          </label>
+          {aLtd && <input type="date" value={aExpires} onChange={e => setAExpires(e.target.value)} className={inputCls} />}
+        </div>
+      </div>
+
+      <div className="flex gap-2 mt-4">
+        <button
+          onClick={handleSave}
+          disabled={isPending || (!welcomeOffer && !additionalOffer)}
+          className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-40"
+        >
+          {isPending ? 'Saving…' : 'Save Changes'}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={isPending}
+          className="text-sm text-gray-500 hover:underline disabled:opacity-40"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   )
 }
 
 // ── Add Offer panel ───────────────────────────────────────────────────────────
 
 function AddOfferPanel({ cardId }: { cardId: string }) {
-  const [open, setOpen] = useState(false)
-  const [isPending, startTrans] = useTransition()
-  const [savedOk, setSavedOk] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const [open, setOpen]           = useState(false)
+  const [isPending, startTrans]   = useTransition()
+  const [savedOk, setSavedOk]     = useState(false)
+  const [err, setErr]             = useState<string | null>(null)
   const router = useRouter()
 
   // Shared headline
   const [headline, setHeadline] = useState('')
 
   // Welcome bonus fields
-  const [wPoints, setWPoints] = useState('')
-  const [wCash, setWCash] = useState('')
-  const [wSpend, setWSpend] = useState('')
-  const [wLtd, setWLtd] = useState(false)
+  const [wPoints,  setWPoints]  = useState('')
+  const [wCash,    setWCash]    = useState('')
+  const [wSpend,   setWSpend]   = useState('')
+  const [wLtd,     setWLtd]     = useState(false)
   const [wExpires, setWExpires] = useState('')
 
   // Additional bonus fields
-  const [aPoints, setAPoints] = useState('')
-  const [aCash, setACash] = useState('')
-  const [aSpend, setASpend] = useState('')
-  const [aLtd, setALtd] = useState(false)
+  const [aPoints,  setAPoints]  = useState('')
+  const [aCash,    setACash]    = useState('')
+  const [aSpend,   setASpend]   = useState('')
+  const [aLtd,     setALtd]     = useState(false)
   const [aExpires, setAExpires] = useState('')
 
   const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 w-full'
@@ -344,246 +583,11 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
               Cancel
             </button>
             {savedOk && <span className="text-xs text-green-600">Saved</span>}
-            {err && <span className="text-xs text-red-600">{err}</span>}
+            {err     && <span className="text-xs text-red-600">{err}</span>}
           </div>
         </div>
       )}
     </div>
-  )
-}
-
-// ── Active row (read-only, shown for comparison) ─────────────────────────────
-
-function ActiveRow({ offer }: { offer: OfferRow }) {
-  const rowCls = offer.offer_type === 'welcome_bonus'
-    ? 'bg-green-50 opacity-75 border-l-4 border-l-blue-300'
-    : offer.offer_type === 'additional_offer'
-    ? 'bg-green-50 opacity-75 border-l-4 border-l-purple-300'
-    : 'bg-green-50 opacity-75'
-  return (
-    <tr className={rowCls}>
-      <td className="px-4 py-2.5">
-        <div className="flex flex-col gap-0.5">
-          <span className={`text-xs font-bold uppercase tracking-wide ${
-            offer.offer_type === 'welcome_bonus' ? 'text-blue-600' :
-            offer.offer_type === 'additional_offer' ? 'text-purple-600' : 'text-gray-500'
-          }`}>
-            {offer.offer_type === 'welcome_bonus' ? 'Welcome' :
-             offer.offer_type === 'additional_offer' ? 'Additional' : offer.offer_type}
-          </span>
-          <SourceBadge priority={offer.source_priority} />
-        </div>
-      </td>
-      <td className="px-4 py-2.5 tabular-nums text-gray-700 whitespace-nowrap">{formatValue(offer)}</td>
-      <td className="px-4 py-2.5 text-gray-600 max-w-xs">{offer.headline}</td>
-      <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">{fmtDate(offer.scraped_at)}</td>
-      <td className="px-4 py-2.5">
-        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">active</span>
-      </td>
-      <td className="px-4 py-2.5 text-gray-400 text-xs italic">current</td>
-    </tr>
-  )
-}
-
-// ── Pending row (actionable + inline-editable) ────────────────────────────────
-
-function PendingRow({ offer, hasActive }: { offer: OfferRow; hasActive: boolean }) {
-  const [isPending, startTrans] = useTransition()
-  const [done, setDone]              = useState<'approved' | 'rejected' | null>(null)
-  const [editing, setEditing]        = useState(false)
-  const [headline, setHeadline]      = useState(offer.headline)
-  const [points, setPoints]          = useState(offer.points_value?.toString() ?? '')
-  const [cash, setCash]              = useState(offer.cashback_value?.toString() ?? '')
-  const [offerType, setOfferType]    = useState(offer.offer_type)
-  const [spendReq, setSpendReq]      = useState(offer.spend_requirement?.toString() ?? '')
-  const [isLtd, setIsLtd]            = useState(offer.is_limited_time)
-  const [expiresAt, setExpiresAt]    = useState(offer.expires_at?.slice(0, 10) ?? '')
-  const router = useRouter()
-
-  function act(action: () => Promise<void>) {
-    startTrans(async () => {
-      await action()
-      router.refresh()
-    })
-  }
-
-  function handleSaveChanges() {
-    act(async () => {
-      await updateOffer(offer.id, {
-        headline,
-        offer_type: offerType,
-        points_value: points ? Number(points) : null,
-        cashback_value: cash ? Number(cash) : null,
-        spend_requirement: spendReq ? Number(spendReq) : null,
-        is_active: offer.is_active,
-        is_limited_time: isLtd,
-        expires_at: expiresAt || null,
-      })
-      setEditing(false)
-    })
-  }
-
-  if (done === 'approved') {
-    return (
-      <tr className="bg-green-50">
-        <td colSpan={6} className="px-4 py-2 text-xs text-green-700 font-medium">Activated</td>
-      </tr>
-    )
-  }
-  if (done === 'rejected') {
-    return (
-      <tr className="bg-red-50">
-        <td colSpan={6} className="px-4 py-2 text-xs text-red-600 font-medium">Rejected</td>
-      </tr>
-    )
-  }
-
-  const rowCls = offer.offer_type === 'welcome_bonus'
-    ? 'bg-amber-50 border-l-4 border-l-blue-400'
-    : offer.offer_type === 'additional_offer'
-    ? 'bg-amber-50 border-l-4 border-l-purple-400'
-    : 'bg-amber-50'
-
-  return (
-    <tr className={rowCls}>
-      <td className="px-4 py-2.5">
-        {editing ? (
-          <select
-            value={offerType}
-            onChange={e => setOfferType(e.target.value)}
-            className="border border-amber-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
-          >
-            {OFFER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            <span className={`text-xs font-bold uppercase tracking-wide ${
-              offer.offer_type === 'welcome_bonus' ? 'text-blue-600' :
-              offer.offer_type === 'additional_offer' ? 'text-purple-600' : 'text-gray-500'
-            }`}>
-              {offer.offer_type === 'welcome_bonus' ? 'Welcome' :
-               offer.offer_type === 'additional_offer' ? 'Additional' : offer.offer_type}
-            </span>
-            <SourceBadge priority={offer.source_priority} />
-          </div>
-        )}
-      </td>
-      <td className="px-4 py-2.5 tabular-nums font-medium whitespace-nowrap">
-        {editing ? (
-          <div className="space-y-1">
-            <input
-              type="number"
-              value={points}
-              onChange={e => setPoints(e.target.value)}
-              placeholder="pts"
-              className="w-24 border border-amber-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-400"
-            />
-            <input
-              type="number"
-              step="0.01"
-              value={cash}
-              onChange={e => setCash(e.target.value)}
-              placeholder="cash"
-              className="w-24 border border-amber-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-400"
-            />
-          </div>
-        ) : formatValue(offer)}
-      </td>
-      <td className="px-4 py-2.5 max-w-xs">
-        {editing ? (
-          <div className="space-y-1">
-            <input
-              value={headline}
-              onChange={e => setHeadline(e.target.value)}
-              className="w-full border border-amber-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
-            />
-            <input
-              type="number"
-              value={spendReq}
-              onChange={e => setSpendReq(e.target.value)}
-              placeholder="spend req $"
-              className="w-28 border border-amber-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
-            />
-            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isLtd}
-                onChange={e => setIsLtd(e.target.checked)}
-                className="h-3.5 w-3.5"
-              />
-              Limited time
-            </label>
-            {isLtd && (
-              <input
-                type="date"
-                value={expiresAt}
-                onChange={e => setExpiresAt(e.target.value)}
-                className="border border-amber-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
-              />
-            )}
-          </div>
-        ) : offer.headline}
-      </td>
-      <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">{fmtDate(offer.scraped_at)}</td>
-      <td className="px-4 py-2.5">
-        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">pending</span>
-      </td>
-      <td className="px-4 py-2.5">
-        <div className="flex items-center gap-2 flex-wrap">
-          {editing ? (
-            <>
-              <button
-                onClick={handleSaveChanges}
-                disabled={isPending}
-                className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 disabled:opacity-40"
-              >
-                {isPending ? 'Saving…' : 'Save Changes'}
-              </button>
-              <button
-                onClick={() => setEditing(false)}
-                disabled={isPending}
-                className="text-xs text-gray-500 hover:underline disabled:opacity-40"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => setEditing(true)}
-                disabled={isPending}
-                className="text-xs text-blue-600 hover:underline disabled:opacity-40"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => act(async () => { await approveOffer(offer.id); setDone('approved') })}
-                disabled={isPending}
-                className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 disabled:opacity-40"
-              >
-                Activate
-              </button>
-              <button
-                onClick={() => act(async () => { await rejectOffer(offer.id); setDone('rejected') })}
-                disabled={isPending}
-                className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 disabled:opacity-40"
-              >
-                Trash
-              </button>
-              {hasActive && (
-                <button
-                  onClick={() => act(async () => { await rejectOffer(offer.id); setDone('rejected') })}
-                  disabled={isPending}
-                  className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded hover:bg-gray-300 disabled:opacity-40"
-                >
-                  Keep Existing
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </td>
-    </tr>
   )
 }
 
@@ -620,20 +624,4 @@ function TierBadge({ tier }: { tier: string }) {
       {tier}
     </span>
   )
-}
-
-function formatValue(o: OfferRow): string {
-  if (o.points_value != null && o.points_value > 0)
-    return `${o.points_value.toLocaleString('en-CA')} pts`
-  if (o.cashback_value != null && o.cashback_value > 0)
-    return `$${o.cashback_value} CB`
-  return '—'
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleString('en-CA', {
-    timeZone: 'America/Toronto',
-    dateStyle: 'short',
-    timeStyle: 'short',
-  })
 }
