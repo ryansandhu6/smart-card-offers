@@ -26,11 +26,12 @@ type Card = {
 type Issuer = { id: string; name: string }
 
 export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers: Issuer[] }) {
-  const [editing, setEditing]     = useState<string | null>(null)
-  const [showAdd, setShowAdd]     = useState(false)
-  const [isPending, startTrans]   = useTransition()
-  const [error, setError]         = useState<string | null>(null)
-  const [filter, setFilter]       = useState('')
+  const [editing, setEditing]         = useState<string | null>(null)
+  const [showAdd, setShowAdd]         = useState(false)
+  const [showTierGuide, setShowTierGuide] = useState(false)
+  const [isPending, startTrans]       = useTransition()
+  const [error, setError]             = useState<string | null>(null)
+  const [filter, setFilter]           = useState('')
   const router = useRouter()
 
   const visible = filter
@@ -118,6 +119,12 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
           onChange={e => setFilter(e.target.value)}
           className="w-full max-w-sm border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
         />
+        <button
+          onClick={() => setShowTierGuide(v => !v)}
+          className="text-sm text-gray-500 border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50 whitespace-nowrap"
+        >
+          Tier Guide {showTierGuide ? '▴' : '▾'}
+        </button>
         {!showAdd && (
           <button
             onClick={() => setShowAdd(true)}
@@ -128,14 +135,50 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
         )}
       </div>
 
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-gray-400 whitespace-nowrap">Tier Guide:</span>
-        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">no-fee</span>
-        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600">entry</span>
-        <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-600">mid</span>
-        <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700">premium</span>
-        <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700">super-premium</span>
-      </div>
+      {showTierGuide && (
+        <div className="grid grid-cols-5 gap-3 text-xs">
+          {/* NO-FEE */}
+          <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+            <div className="font-semibold text-gray-700 uppercase tracking-wide text-xs border-b border-gray-200 pb-1">No-Fee</div>
+            <div className="text-gray-400 font-medium">$0/yr</div>
+            <p className="text-gray-600 leading-relaxed">No annual fee. Basic earn rates (1–2x). No lounge access or travel insurance.</p>
+            <p className="text-gray-500"><span className="font-medium">Best for:</span> everyday spending, students, credit building.</p>
+            <p className="text-gray-400 italic">SimplyCash, Tangerine Money-Back</p>
+          </div>
+          {/* ENTRY */}
+          <div className="bg-blue-50 rounded-lg p-3 space-y-1.5">
+            <div className="font-semibold text-blue-700 uppercase tracking-wide text-xs border-b border-blue-200 pb-1">Entry</div>
+            <div className="text-blue-400 font-medium">$0–$120/yr</div>
+            <p className="text-blue-800 leading-relaxed">Low annual fee, waived first year. Moderate earn rates (2–3x on categories). Basic travel insurance. No lounge access.</p>
+            <p className="text-blue-700"><span className="font-medium">Best for:</span> first travel card, occasional travellers.</p>
+            <p className="text-blue-400 italic">TD First Class Travel, Scotia Momentum Visa</p>
+          </div>
+          {/* MID */}
+          <div className="bg-indigo-50 rounded-lg p-3 space-y-1.5">
+            <div className="font-semibold text-indigo-700 uppercase tracking-wide text-xs border-b border-indigo-200 pb-1">Mid</div>
+            <div className="text-indigo-400 font-medium">$120–$250/yr</div>
+            <p className="text-indigo-800 leading-relaxed">Solid earn rates (3–5x). Strong travel insurance package. Limited lounge access (1–6 passes/yr) or Priority Pass entry level. FYF common.</p>
+            <p className="text-indigo-700"><span className="font-medium">Best for:</span> frequent travellers, points enthusiasts.</p>
+            <p className="text-indigo-400 italic">Amex Cobalt, TD Aeroplan Visa Infinite</p>
+          </div>
+          {/* PREMIUM */}
+          <div className="bg-purple-50 rounded-lg p-3 space-y-1.5">
+            <div className="font-semibold text-purple-700 uppercase tracking-wide text-xs border-b border-purple-200 pb-1">Premium</div>
+            <div className="text-purple-400 font-medium">$250–$599/yr</div>
+            <p className="text-purple-800 leading-relaxed">High earn rates (5x+). Comprehensive insurance. Full lounge access (Priority Pass or Amex Centurion). Concierge service. Strong travel credits.</p>
+            <p className="text-purple-700"><span className="font-medium">Best for:</span> road warriors, high spenders, business travellers.</p>
+            <p className="text-purple-400 italic">Amex Gold, Scotiabank Passport Visa Infinite</p>
+          </div>
+          {/* SUPER-PREMIUM */}
+          <div className="bg-amber-50 rounded-lg p-3 space-y-1.5">
+            <div className="font-semibold text-amber-700 uppercase tracking-wide text-xs border-b border-amber-200 pb-1">Super-Premium</div>
+            <div className="text-amber-400 font-medium">$600+/yr</div>
+            <p className="text-amber-800 leading-relaxed">Top-tier earn rates. Unlimited lounge access globally. Hotel/airline status. Annual travel credits that offset the fee. Metal card.</p>
+            <p className="text-amber-700"><span className="font-medium">Best for:</span> luxury travellers, those who can offset the fee with credits.</p>
+            <p className="text-amber-400 italic">Amex Platinum, TD Aeroplan Visa Infinite Privilege</p>
+          </div>
+        </div>
+      )}
 
       {showAdd && (
         <AddCardForm
