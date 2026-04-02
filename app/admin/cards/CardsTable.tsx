@@ -424,6 +424,16 @@ function EditRow({
             />
           </div>
           <div>
+            <label className="block text-xs text-gray-500 mb-1">Annual Fee ($)</label>
+            <input
+              type="number"
+              value={annual_fee}
+              onChange={e => setAnnualFee(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+              placeholder="0"
+            />
+          </div>
+          <div>
             <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
               <input
                 type="checkbox"

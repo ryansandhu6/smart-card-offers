@@ -109,6 +109,7 @@ export async function deleteCard(id: string) {
   if (error) throw new Error(error.message)
   revalidatePath('/admin/cards')
   revalidatePath('/admin/review')
+  revalidatePath('/admin/offers')
   revalidatePath('/admin')
 }
 

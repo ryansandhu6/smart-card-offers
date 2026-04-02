@@ -419,6 +419,23 @@ function CardEditPanel({
         </button>
         {err && <span className="text-xs text-red-600">{err}</span>}
       </div>
+      <div className="pt-2 border-t border-blue-100 mt-2">
+        <button
+          onClick={() => {
+            if (!window.confirm(`Delete ${welcomeOffer?.card?.name ?? 'this card'} and all its offers? Cannot be undone.`)) return
+            startTrans(async () => {
+              if (welcomeOffer) await deleteOffer(welcomeOffer.id)
+              if (additionalOffer) await deleteOffer(additionalOffer.id)
+              router.refresh()
+              onDone()
+            })
+          }}
+          disabled={isPending}
+          className="text-xs text-red-500 hover:underline disabled:opacity-40"
+        >
+          Delete Card &amp; All Offers
+        </button>
+      </div>
     </div>
   )
 }
