@@ -133,6 +133,9 @@ export async function createOffer(data: {
       ...rest,
       is_active: is_active ?? true,
       review_status: review_status ?? 'approved',
+      scraped_at: new Date().toISOString(),
+      is_verified: false,
+      is_better_than_usual: false,
     })
   if (error) throw new Error(error.message)
   revalidatePath('/admin/offers')

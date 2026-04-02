@@ -189,8 +189,10 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
   const [err, setErr] = useState<string | null>(null)
   const router = useRouter()
 
+  // Shared headline
+  const [headline, setHeadline] = useState('')
+
   // Welcome bonus fields
-  const [wHeadline, setWHeadline] = useState('')
   const [wPoints, setWPoints] = useState('')
   const [wCash, setWCash] = useState('')
   const [wSpend, setWSpend] = useState('')
@@ -198,7 +200,6 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
   const [wExpires, setWExpires] = useState('')
 
   // Additional bonus fields
-  const [aHeadline, setAHeadline] = useState('')
   const [aPoints, setAPoints] = useState('')
   const [aCash, setACash] = useState('')
   const [aSpend, setASpend] = useState('')
@@ -213,10 +214,10 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
     startTrans(async () => {
       try {
         // Save welcome bonus if headline filled
-        if (wHeadline.trim()) {
+        if (headline.trim()) {
           await createOffer({
             card_id: cardId,
-            headline: wHeadline.trim(),
+            headline: headline.trim(),
             offer_type: 'welcome_bonus',
             points_value: wPoints ? Number(wPoints) : null,
             cashback_value: wCash ? Number(wCash) : null,
@@ -229,11 +230,11 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
             review_status: 'pending_review',
           })
         }
-        // Save additional bonus if headline filled
-        if (aHeadline.trim()) {
+        // Save additional bonus alongside welcome bonus
+        if (headline.trim()) {
           await createOffer({
             card_id: cardId,
-            headline: aHeadline.trim(),
+            headline: headline.trim(),
             offer_type: 'additional_offer',
             points_value: aPoints ? Number(aPoints) : null,
             cashback_value: aCash ? Number(aCash) : null,
@@ -266,14 +267,21 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
         </button>
       ) : (
         <div className="px-5 py-4 bg-gray-50 space-y-4">
+          <div className="mb-3">
+            <label className="block text-xs text-gray-500 mb-1">
+              Headline <span className="text-gray-400">(shared for both bonuses)</span>
+            </label>
+            <input
+              value={headline}
+              onChange={e => setHeadline(e.target.value)}
+              placeholder="e.g. Earn 60,000 pts welcome + 15,000 additional on $3,000 spend"
+              className={inputCls}
+            />
+          </div>
           <div className="grid grid-cols-2 gap-6">
             {/* Welcome Bonus */}
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide border-b pb-1">Welcome Bonus</h4>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Headline</label>
-                <input value={wHeadline} onChange={e => setWHeadline(e.target.value)} placeholder="e.g. Earn 60,000 points..." className={inputCls} />
-              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Points</label>
@@ -298,10 +306,6 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
             {/* Additional Bonus */}
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide border-b pb-1">Additional Bonus</h4>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Headline</label>
-                <input value={aHeadline} onChange={e => setAHeadline(e.target.value)} placeholder="e.g. Plus earn 15,000 more..." className={inputCls} />
-              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Points</label>
@@ -327,7 +331,7 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
           <div className="flex items-center gap-3 pt-1">
             <button
               onClick={handleSave}
-              disabled={isPending || (!wHeadline.trim() && !aHeadline.trim())}
+              disabled={isPending || !headline.trim()}
               className="text-sm bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 disabled:opacity-40"
             >
               {isPending ? 'Saving…' : 'Save Offers'}
