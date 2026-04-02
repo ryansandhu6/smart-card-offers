@@ -164,10 +164,10 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
           <tbody className="divide-y divide-gray-100">
             {[...grouped.entries()].map(([slug, { cardName, offers: groupOffers }]) => (
               <React.Fragment key={slug}>
-                <tr className="bg-gray-100 border-t border-gray-200">
+                <tr className="bg-gray-50 border-t-2 border-gray-200">
                   <td colSpan={7} className="px-4 py-1.5">
-                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{cardName}</span>
-                    <span className="ml-2 text-xs text-gray-400 font-mono">{slug}</span>
+                    <span className="font-medium text-xs text-gray-700">{cardName}</span>
+                    <span className="ml-2 font-mono text-xs text-gray-400">{slug}</span>
                   </td>
                 </tr>
                 {groupOffers.map(offer =>
@@ -211,23 +211,20 @@ function ViewRow({
   onDeactivate: () => void
 }) {
   const borderCls =
-    offer.offer_type === 'welcome_bonus'   ? 'border-l-4 border-l-blue-400' :
-    offer.offer_type === 'additional_offer' ? 'border-l-4 border-l-purple-400' :
-                                              'border-l-4 border-l-gray-300'
-  const typeLabelCls =
-    offer.offer_type === 'welcome_bonus'   ? 'bg-blue-100 text-blue-700' :
-    offer.offer_type === 'additional_offer' ? 'bg-purple-100 text-purple-700' :
-                                              'bg-gray-100 text-gray-600'
-  const typeLabel =
-    offer.offer_type === 'welcome_bonus'   ? 'Welcome' :
-    offer.offer_type === 'additional_offer' ? 'Additional' :
-                                              offer.offer_type
+    offer.offer_type === 'welcome_bonus'    ? 'border-l-4 border-l-blue-400' :
+    offer.offer_type === 'additional_offer' ? 'border-l-4 border-l-purple-400' : ''
 
   return (
     <tr className={`hover:bg-gray-50 ${!offer.is_active ? 'opacity-50' : ''} ${borderCls}`}>
       <td className="px-4 py-2.5 max-w-xs">
         <div className="truncate">{offer.headline}</div>
-        <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-medium ${typeLabelCls}`}>{typeLabel}</span>
+        <div className={`text-xs font-bold uppercase tracking-wide mt-0.5 ${
+          offer.offer_type === 'welcome_bonus'    ? 'text-blue-600' :
+          offer.offer_type === 'additional_offer' ? 'text-purple-600' : 'text-gray-400'
+        }`}>
+          {offer.offer_type === 'welcome_bonus'    ? 'Welcome' :
+           offer.offer_type === 'additional_offer' ? 'Additional' : offer.offer_type}
+        </div>
       </td>
       <td className="px-4 py-2.5 text-right tabular-nums">
         {offer.points_value != null ? offer.points_value.toLocaleString() : '—'}
