@@ -1,7 +1,7 @@
 'use client'
 import React, { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createOffer, updateOffer } from '../actions'
+import { createOffer, updateOffer, deleteOffer } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 
 const SOURCE_PRIORITY: Record<string, number> = {
@@ -180,13 +180,29 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() => setEditingCard(editingCard === row.cardSlug ? null : row.cardSlug)}
-                      disabled={isPending}
-                      className="text-xs text-blue-600 hover:underline disabled:opacity-40"
-                    >
-                      {editingCard === row.cardSlug ? 'Close' : 'Edit'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setEditingCard(editingCard === row.cardSlug ? null : row.cardSlug)}
+                        disabled={isPending}
+                        className="text-xs text-blue-600 hover:underline disabled:opacity-40"
+                      >
+                        {editingCard === row.cardSlug ? 'Close' : 'Edit'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!window.confirm(`Delete ${row.cardName} and all its offers?`)) return
+                          startTrans(async () => {
+                            if (row.welcomeOffer) await deleteOffer(row.welcomeOffer.id)
+                            if (row.additionalOffer) await deleteOffer(row.additionalOffer.id)
+                            router.refresh()
+                          })
+                        }}
+                        disabled={isPending}
+                        className="text-xs text-red-600 hover:underline disabled:opacity-40"
+                      >
+                        Delete Card
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 {editingCard === row.cardSlug && (
@@ -230,13 +246,12 @@ function CardEditPanel({
   const [err, setErr]           = useState<string | null>(null)
   const router = useRouter()
 
-  const [wHeadline, setWHeadline] = useState(welcomeOffer?.headline ?? '')
+  const [headline,  setHeadline]  = useState(welcomeOffer?.headline ?? additionalOffer?.headline ?? '')
   const [wPoints,   setWPoints]   = useState(welcomeOffer?.points_value?.toString() ?? '')
   const [wSpend,    setWSpend]    = useState(welcomeOffer?.spend_requirement?.toString() ?? '')
   const [wLtd,      setWLtd]      = useState(welcomeOffer?.is_limited_time ?? false)
   const [wExpires,  setWExpires]  = useState(welcomeOffer?.expires_at?.slice(0, 10) ?? '')
 
-  const [aHeadline, setAHeadline] = useState(additionalOffer?.headline ?? '')
   const [aPoints,   setAPoints]   = useState(additionalOffer?.points_value?.toString() ?? '')
   const [aSpend,    setASpend]    = useState(additionalOffer?.spend_requirement?.toString() ?? '')
   const [aLtd,      setALtd]      = useState(additionalOffer?.is_limited_time ?? false)
@@ -249,7 +264,7 @@ function CardEditPanel({
         // Welcome bonus: update if exists, create if headline or points filled
         if (welcomeOffer) {
           await updateOffer(welcomeOffer.id, {
-            headline: wHeadline,
+            headline,
             offer_type: 'welcome_bonus',
             points_value: wPoints ? Number(wPoints) : null,
             cashback_value: welcomeOffer.cashback_value,
@@ -258,10 +273,10 @@ function CardEditPanel({
             is_limited_time: wLtd,
             expires_at: wExpires || null,
           })
-        } else if (wHeadline.trim() || wPoints) {
+        } else if (headline.trim() || wPoints) {
           await createOffer({
             card_id: cardId,
-            headline: wHeadline.trim(),
+            headline: headline.trim(),
             offer_type: 'welcome_bonus',
             points_value: wPoints ? Number(wPoints) : null,
             cashback_value: null,
@@ -278,7 +293,7 @@ function CardEditPanel({
         // Additional bonus: update if exists, create if headline or points filled
         if (additionalOffer) {
           await updateOffer(additionalOffer.id, {
-            headline: aHeadline,
+            headline,
             offer_type: 'additional_offer',
             points_value: aPoints ? Number(aPoints) : null,
             cashback_value: additionalOffer.cashback_value,
@@ -287,10 +302,10 @@ function CardEditPanel({
             is_limited_time: aLtd,
             expires_at: aExpires || null,
           })
-        } else if (aHeadline.trim() || aPoints) {
+        } else if (headline.trim() || aPoints) {
           await createOffer({
             card_id: cardId,
-            headline: aHeadline.trim(),
+            headline: headline.trim(),
             offer_type: 'additional_offer',
             points_value: aPoints ? Number(aPoints) : null,
             cashback_value: null,
@@ -317,16 +332,16 @@ function CardEditPanel({
 
   return (
     <div className="px-5 py-4 bg-blue-50 border-t border-b border-blue-100">
+      <div className="mb-4">
+        <label className={labelCls}>Headline <span className="text-gray-400 font-normal normal-case">(shared for both bonuses)</span></label>
+        <input value={headline} onChange={e => setHeadline(e.target.value)} className={inputCls} />
+      </div>
       <div className="grid grid-cols-2 gap-6">
         {/* Welcome Bonus */}
         <div className="space-y-2">
           <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide border-b border-blue-200 pb-1">
             Welcome Bonus {!welcomeOffer && <span className="font-normal text-blue-400 normal-case">(new)</span>}
           </h4>
-          <div>
-            <label className={labelCls}>Headline</label>
-            <input value={wHeadline} onChange={e => setWHeadline(e.target.value)} className={inputCls} />
-          </div>
           <div>
             <label className={labelCls}>Points</label>
             <input type="number" value={wPoints} onChange={e => setWPoints(e.target.value)} placeholder="—" className={inputCls} />
@@ -340,6 +355,18 @@ function CardEditPanel({
             Limited time
           </label>
           {wLtd && <input type="date" value={wExpires} onChange={e => setWExpires(e.target.value)} className={inputCls} />}
+          {welcomeOffer && (
+            <button
+              onClick={() => {
+                if (!window.confirm(`Delete welcome bonus offer for ${welcomeOffer.card?.name ?? 'this card'}?`)) return
+                startTrans(async () => { await deleteOffer(welcomeOffer.id); router.refresh(); onDone() })
+              }}
+              disabled={isPending}
+              className="text-xs text-red-500 hover:underline disabled:opacity-40 pt-1 block"
+            >
+              Delete
+            </button>
+          )}
         </div>
 
         {/* Additional Bonus */}
@@ -347,10 +374,6 @@ function CardEditPanel({
           <h4 className="text-xs font-semibold text-purple-700 uppercase tracking-wide border-b border-purple-200 pb-1">
             Additional Bonus {!additionalOffer && <span className="font-normal text-purple-400 normal-case">(new)</span>}
           </h4>
-          <div>
-            <label className={labelCls}>Headline</label>
-            <input value={aHeadline} onChange={e => setAHeadline(e.target.value)} className={inputCls} />
-          </div>
           <div>
             <label className={labelCls}>Points</label>
             <input type="number" value={aPoints} onChange={e => setAPoints(e.target.value)} placeholder="—" className={inputCls} />
@@ -364,6 +387,18 @@ function CardEditPanel({
             Limited time
           </label>
           {aLtd && <input type="date" value={aExpires} onChange={e => setAExpires(e.target.value)} className={inputCls} />}
+          {additionalOffer && (
+            <button
+              onClick={() => {
+                if (!window.confirm(`Delete additional bonus offer for ${additionalOffer.card?.name ?? 'this card'}?`)) return
+                startTrans(async () => { await deleteOffer(additionalOffer.id); router.refresh(); onDone() })
+              }}
+              disabled={isPending}
+              className="text-xs text-red-500 hover:underline disabled:opacity-40 pt-1 block"
+            >
+              Delete
+            </button>
+          )}
         </div>
       </div>
 

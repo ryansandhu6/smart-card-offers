@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer } from '../actions'
+import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 import type { CardGroup, OfferRow } from './page'
 
@@ -83,6 +83,14 @@ function CardSection({ group }: { group: CardGroup }) {
     })
   }
 
+  function handleDeleteCard() {
+    if (!window.confirm(`Delete ${group.card_name} and all its offers? Cannot be undone.`)) return
+    startTrans(async () => {
+      await deleteCard(group.card_id)
+      router.refresh()
+    })
+  }
+
   const feeLabel = (group.card_annual_fee ?? 0) === 0 ? 'No Fee' : `$${group.card_annual_fee}/yr`
   const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full'
 
@@ -98,8 +106,15 @@ function CardSection({ group }: { group: CardGroup }) {
           <span className="text-xs bg-green-100 text-green-700 rounded px-1.5 py-0.5">FYF</span>
         )}
         <button
+          onClick={handleDeleteCard}
+          disabled={isPending}
+          className="ml-auto text-xs text-red-600 hover:underline disabled:opacity-40"
+        >
+          Delete Card
+        </button>
+        <button
           onClick={() => { setShowEdit(v => !v); setSavedOk(false); setSaveErr(null) }}
-          className="ml-auto text-xs text-blue-600 hover:underline"
+          className="text-xs text-blue-600 hover:underline"
         >
           {showEdit ? 'Hide ▴' : 'Edit Card Details ▾'}
         </button>
@@ -207,12 +222,21 @@ function CardSection({ group }: { group: CardGroup }) {
           )}
 
           {/* Pending summary row */}
-          {(welcomePending || additionalPending) && (
+          {(welcomePending || additionalPending) && (() => {
+            const typeCounts = sortedPending.reduce((acc, o) => {
+              acc[o.offer_type] = (acc[o.offer_type] ?? 0) + 1
+              return acc
+            }, {} as Record<string, number>)
+            const hasDuplicates = Object.values(typeCounts).some(c => c > 1)
+            return (
             <tr className="bg-amber-50">
               <td className="px-4 py-2.5">
                 <SourceBadge priority={Math.min(
                   ...[welcomePending, additionalPending].filter(Boolean).map(o => o!.source_priority)
                 )} />
+                {hasDuplicates && (
+                  <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700">Duplicate</span>
+                )}
               </td>
               <td className="px-4 py-2.5 tabular-nums text-blue-600 font-medium">
                 {welcomePending?.points_value?.toLocaleString('en-CA') ?? <span className="text-gray-300">—</span>}
@@ -243,19 +267,44 @@ function CardSection({ group }: { group: CardGroup }) {
                     disabled={isPending}
                     className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 disabled:opacity-40"
                   >
-                    Activate All
+                    Activate
                   </button>
                   <button
                     onClick={trashAll}
                     disabled={isPending}
                     className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 disabled:opacity-40"
                   >
-                    Trash All
+                    Trash
                   </button>
+                  {welcomePending && (
+                    <button
+                      onClick={() => {
+                        if (!window.confirm('Permanently delete this offer?')) return
+                        startTrans(async () => { await deleteOffer(welcomePending.id); router.refresh() })
+                      }}
+                      disabled={isPending}
+                      className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                    >
+                      Del W
+                    </button>
+                  )}
+                  {additionalPending && (
+                    <button
+                      onClick={() => {
+                        if (!window.confirm('Permanently delete this offer?')) return
+                        startTrans(async () => { await deleteOffer(additionalPending.id); router.refresh() })
+                      }}
+                      disabled={isPending}
+                      className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                    >
+                      Del A
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
-          )}
+            )
+          })()}
 
           {/* Inline offer edit panel */}
           {showEditOffers && (

@@ -108,6 +108,17 @@ export async function deleteCard(id: string) {
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/cards')
+  revalidatePath('/admin/review')
+  revalidatePath('/admin')
+}
+
+export async function deleteOffer(id: string) {
+  const { error } = await supabaseAdmin
+    .from('card_offers').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/offers')
+  revalidatePath('/admin/review')
+  revalidatePath('/admin')
 }
 
 // ── Offers ───────────────────────────────────────────────────────────────────
