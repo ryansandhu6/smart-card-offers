@@ -446,10 +446,11 @@ function ReviewOfferEditPanel({
 
         // Additional bonuses — update existing, create new
         for (const draft of additionalDrafts) {
+          const effectiveHeadline = draft.headline.trim() || wHeadline.trim()
           if (draft.id) {
             const orig = additionalOffers.find(o => o.id === draft.id)
             await updateOffer(draft.id, {
-              headline: draft.headline,
+              headline: effectiveHeadline,
               offer_type: 'additional_offer',
               points_value: draft.points ? Number(draft.points) : null,
               cashback_value: draft.cash ? Number(draft.cash) : null,
@@ -459,10 +460,10 @@ function ReviewOfferEditPanel({
               is_limited_time: draft.ltd,
               expires_at: draft.expires || null,
             })
-          } else if (draft.headline.trim() || draft.points || draft.cash) {
+          } else if (effectiveHeadline || draft.points || draft.cash) {
             await createOffer({
               card_id: cardId,
-              headline: draft.headline.trim(),
+              headline: effectiveHeadline,
               offer_type: 'additional_offer',
               points_value: draft.points ? Number(draft.points) : null,
               cashback_value: draft.cash ? Number(draft.cash) : null,
