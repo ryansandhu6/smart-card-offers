@@ -19,6 +19,7 @@ type Offer = {
   cashback_value: number | null
   spend_requirement: number | null
   spend_timeframe_days: number | null
+  start_month: number | null
   is_monthly_bonus: boolean
   monthly_points_value: number | null
   monthly_spend_requirement: number | null
@@ -49,6 +50,7 @@ type AdditionalDraft = {
   cash: string
   spend: string
   timeframeDays: string
+  startMonth: string
   ltd: boolean
   expires: string
   is_active: boolean
@@ -289,6 +291,7 @@ function CardEditPanel({
   )
   const [wLtd,          setWLtd]          = useState(welcomeOffer?.is_limited_time ?? false)
   const [wExpires,      setWExpires]      = useState(welcomeOffer?.expires_at?.slice(0, 10) ?? '')
+  const [wStartMonth,   setWStartMonth]   = useState(welcomeOffer?.start_month?.toString() ?? '')
   const [wIsMonthly,    setWIsMonthly]    = useState(welcomeOffer?.is_monthly_bonus ?? false)
   const [wMonthlyPts,   setWMonthlyPts]   = useState(welcomeOffer?.monthly_points_value?.toString() ?? '')
   const [wMonthlySpend, setWMonthlySpend] = useState(welcomeOffer?.monthly_spend_requirement?.toString() ?? '')
@@ -301,6 +304,7 @@ function CardEditPanel({
       cash: o.cashback_value?.toString() ?? '',
       spend: o.spend_requirement?.toString() ?? '',
       timeframeDays: o.spend_timeframe_days ? Math.round(o.spend_timeframe_days / 30).toString() : '',
+      startMonth: o.start_month?.toString() ?? '',
       ltd: o.is_limited_time,
       expires: o.expires_at?.slice(0, 10) ?? '',
       is_active: o.is_active,
@@ -328,6 +332,7 @@ function CardEditPanel({
             cashback_value: wCash ? Number(wCash) : null,
             spend_requirement: wSpend ? Number(wSpend) : null,
             spend_timeframe_days: wTimeframe ? Number(wTimeframe) * 30 : null,
+            start_month: wStartMonth ? Number(wStartMonth) : null,
             is_monthly_bonus: wIsMonthly,
             monthly_points_value: wIsMonthly && wMonthlyPts ? Number(wMonthlyPts) : null,
             monthly_spend_requirement: wIsMonthly && wMonthlySpend ? Number(wMonthlySpend) : null,
@@ -345,6 +350,7 @@ function CardEditPanel({
             cashback_value: wCash ? Number(wCash) : null,
             spend_requirement: wSpend ? Number(wSpend) : null,
             spend_timeframe_days: wTimeframe ? Number(wTimeframe) * 30 : null,
+            start_month: wStartMonth ? Number(wStartMonth) : null,
             is_monthly_bonus: wIsMonthly,
             monthly_points_value: wIsMonthly && wMonthlyPts ? Number(wMonthlyPts) : null,
             monthly_spend_requirement: wIsMonthly && wMonthlySpend ? Number(wMonthlySpend) : null,
@@ -369,6 +375,7 @@ function CardEditPanel({
               cashback_value: draft.cash ? Number(draft.cash) : null,
               spend_requirement: draft.spend ? Number(draft.spend) : null,
               spend_timeframe_days: draft.timeframeDays ? Number(draft.timeframeDays) * 30 : null,
+              start_month: draft.startMonth ? Number(draft.startMonth) : null,
               is_monthly_bonus: draft.isMonthly,
               monthly_points_value: draft.isMonthly && draft.monthlyPoints ? Number(draft.monthlyPoints) : null,
               monthly_spend_requirement: draft.isMonthly && draft.monthlySpend ? Number(draft.monthlySpend) : null,
@@ -386,6 +393,7 @@ function CardEditPanel({
               cashback_value: draft.cash ? Number(draft.cash) : null,
               spend_requirement: draft.spend ? Number(draft.spend) : null,
               spend_timeframe_days: draft.timeframeDays ? Number(draft.timeframeDays) * 30 : null,
+              start_month: draft.startMonth ? Number(draft.startMonth) : null,
               is_monthly_bonus: draft.isMonthly,
               monthly_points_value: draft.isMonthly && draft.monthlyPoints ? Number(draft.monthlyPoints) : null,
               monthly_spend_requirement: draft.isMonthly && draft.monthlySpend ? Number(draft.monthlySpend) : null,
@@ -436,9 +444,15 @@ function CardEditPanel({
             <label className={labelCls}>Spend Req ($)</label>
             <input type="number" value={wSpend} onChange={e => setWSpend(e.target.value)} placeholder="—" className={inputCls} />
           </div>
-          <div>
-            <label className={labelCls}>Timeframe (months)</label>
-            <input type="number" value={wTimeframe} onChange={e => setWTimeframe(e.target.value)} placeholder="—" className={inputCls} />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelCls}>Timeframe (months)</label>
+              <input type="number" value={wTimeframe} onChange={e => setWTimeframe(e.target.value)} placeholder="—" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Start month</label>
+              <input type="number" value={wStartMonth} onChange={e => setWStartMonth(e.target.value)} placeholder="—" className={inputCls} />
+            </div>
           </div>
           <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
             <input type="checkbox" checked={wLtd} onChange={e => setWLtd(e.target.checked)} className="h-3.5 w-3.5" />
@@ -506,9 +520,15 @@ function CardEditPanel({
                   <label className={labelCls}>Spend Req ($)</label>
                   <input type="number" value={draft.spend} onChange={e => updateDraft(i, { spend: e.target.value })} placeholder="—" className={inputCls} />
                 </div>
-                <div>
-                  <label className={labelCls}>Timeframe (months)</label>
-                  <input type="number" value={draft.timeframeDays} onChange={e => updateDraft(i, { timeframeDays: e.target.value })} placeholder="—" className={inputCls} />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelCls}>Timeframe (months)</label>
+                    <input type="number" value={draft.timeframeDays} onChange={e => updateDraft(i, { timeframeDays: e.target.value })} placeholder="—" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Start month</label>
+                    <input type="number" value={draft.startMonth} onChange={e => updateDraft(i, { startMonth: e.target.value })} placeholder="—" className={inputCls} />
+                  </div>
                 </div>
                 <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
                   <input type="checkbox" checked={draft.ltd} onChange={e => updateDraft(i, { ltd: e.target.checked })} className="h-3.5 w-3.5" />
@@ -562,7 +582,7 @@ function CardEditPanel({
           <button
             onClick={() => setAdditionalDrafts(prev => [
               ...prev,
-              { id: undefined, points: '', cash: '', spend: '', timeframeDays: '', ltd: false, expires: '', is_active: true, isMonthly: false, monthlyPoints: '', monthlySpend: '', bonusMonths: '' },
+              { id: undefined, points: '', cash: '', spend: '', timeframeDays: '', startMonth: '', ltd: false, expires: '', is_active: true, isMonthly: false, monthlyPoints: '', monthlySpend: '', bonusMonths: '' },
             ])}
             disabled={isPending}
             className="text-xs text-purple-600 hover:underline disabled:opacity-40"
