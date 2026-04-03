@@ -132,6 +132,10 @@ export async function createOffer(data: {
   cashback_value: number | null
   spend_requirement: number | null
   spend_timeframe_days?: number | null
+  is_monthly_bonus?: boolean
+  monthly_points_value?: number | null
+  monthly_spend_requirement?: number | null
+  bonus_months?: number | null
   source_name: string
   source_priority: number
   is_limited_time: boolean
@@ -167,6 +171,10 @@ export async function updateOffer(
     cashback_value: number | null
     spend_requirement: number | null
     spend_timeframe_days?: number | null
+    is_monthly_bonus?: boolean
+    monthly_points_value?: number | null
+    monthly_spend_requirement?: number | null
+    bonus_months?: number | null
     is_active: boolean
     is_limited_time: boolean
     expires_at: string | null
