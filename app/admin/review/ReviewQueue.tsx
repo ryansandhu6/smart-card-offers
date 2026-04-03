@@ -447,35 +447,44 @@ function ReviewOfferEditPanel({
         // Additional bonuses — update existing, create new
         for (const draft of additionalDrafts) {
           const effectiveHeadline = draft.headline.trim() || wHeadline.trim()
-          if (draft.id) {
-            const orig = additionalOffers.find(o => o.id === draft.id)
-            await updateOffer(draft.id, {
-              headline: effectiveHeadline,
-              offer_type: 'additional_offer',
-              points_value: draft.points ? Number(draft.points) : null,
-              cashback_value: draft.cash ? Number(draft.cash) : null,
-              spend_requirement: draft.spend ? Number(draft.spend) : null,
-              spend_timeframe_days: draft.timeframeDays ? Number(draft.timeframeDays) * 30 : null,
-              is_active: orig?.is_active ?? false,
-              is_limited_time: draft.ltd,
-              expires_at: draft.expires || null,
-            })
-          } else if (effectiveHeadline || draft.points || draft.cash) {
-            await createOffer({
-              card_id: cardId,
-              headline: effectiveHeadline,
-              offer_type: 'additional_offer',
-              points_value: draft.points ? Number(draft.points) : null,
-              cashback_value: draft.cash ? Number(draft.cash) : null,
-              spend_requirement: draft.spend ? Number(draft.spend) : null,
-              spend_timeframe_days: draft.timeframeDays ? Number(draft.timeframeDays) * 30 : null,
-              source_name: 'manual',
-              source_priority: 9,
-              is_limited_time: draft.ltd,
-              expires_at: draft.expires || null,
-              is_active: false,
-              review_status: 'pending_review',
-            })
+          try {
+            if (draft.id) {
+              const orig = additionalOffers.find(o => o.id === draft.id)
+              await updateOffer(draft.id, {
+                headline: effectiveHeadline,
+                offer_type: 'additional_offer',
+                points_value: draft.points ? Number(draft.points) : null,
+                cashback_value: draft.cash ? Number(draft.cash) : null,
+                spend_requirement: draft.spend ? Number(draft.spend) : null,
+                spend_timeframe_days: draft.timeframeDays ? Number(draft.timeframeDays) * 30 : null,
+                is_active: orig?.is_active ?? false,
+                is_limited_time: draft.ltd,
+                expires_at: draft.expires || null,
+              })
+            } else if (effectiveHeadline || draft.points || draft.cash) {
+              const payload = {
+                card_id: cardId,
+                headline: effectiveHeadline,
+                offer_type: 'additional_offer',
+                points_value: draft.points ? Number(draft.points) : null,
+                cashback_value: draft.cash ? Number(draft.cash) : null,
+                spend_requirement: draft.spend ? Number(draft.spend) : null,
+                spend_timeframe_days: draft.timeframeDays ? Number(draft.timeframeDays) * 30 : null,
+              }
+              console.log('[createOffer] additional_offer payload:', payload)
+              await createOffer({
+                ...payload,
+                source_name: 'manual',
+                source_priority: 9,
+                is_limited_time: draft.ltd,
+                expires_at: draft.expires || null,
+                is_active: false,
+                review_status: 'pending_review',
+              })
+            }
+          } catch (draftErr) {
+            console.error('[handleSave] additional draft failed:', draftErr, { draft, effectiveHeadline, cardId })
+            throw draftErr
           }
         }
 

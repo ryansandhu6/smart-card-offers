@@ -150,7 +150,10 @@ export async function createOffer(data: {
       is_verified: false,
       is_better_than_usual: false,
     })
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[createOffer] supabase insert failed:', error, { data })
+    throw new Error(error.message)
+  }
   revalidatePath('/admin/offers')
   revalidatePath('/admin/review')
 }
