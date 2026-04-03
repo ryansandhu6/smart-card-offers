@@ -65,6 +65,7 @@ export async function updateCard(
     short_description: string | null
     referral_url: string | null
     image_url: string | null
+    has_no_bonus?: boolean
   }
 ) {
   const { error } = await supabaseAdmin
@@ -74,6 +75,16 @@ export async function updateCard(
   if (error) throw new Error(error.message)
   revalidatePath('/admin/cards')
   revalidatePath('/admin/review')
+}
+
+export async function setCardNoBonus(cardId: string, hasNoBonus: boolean) {
+  const { error } = await supabaseAdmin
+    .from('credit_cards')
+    .update({ has_no_bonus: hasNoBonus })
+    .eq('id', cardId)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/review')
+  revalidatePath('/admin')
 }
 
 export async function deactivateCard(id: string) {
@@ -107,10 +118,30 @@ export async function deleteCard(id: string) {
     .delete()
     .eq('id', id)
   if (error) throw new Error(error.message)
+  await cleanupOrphanedOffers()
   revalidatePath('/admin/cards')
   revalidatePath('/admin/review')
   revalidatePath('/admin/offers')
   revalidatePath('/admin')
+}
+
+export async function cleanupOrphanedOffers(): Promise<{ deleted: number }> {
+  const { data: validCards, error: fetchError } = await supabaseAdmin
+    .from('credit_cards')
+    .select('id')
+  if (fetchError) throw new Error(fetchError.message)
+  const validIds = (validCards ?? []).map((c: { id: string }) => c.id)
+  if (validIds.length === 0) return { deleted: 0 }
+  const { data: deleted, error } = await supabaseAdmin
+    .from('card_offers')
+    .delete()
+    .not('card_id', 'in', `(${validIds.join(',')})`)
+    .select('id')
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/offers')
+  revalidatePath('/admin/review')
+  revalidatePath('/admin')
+  return { deleted: (deleted ?? []).length }
 }
 
 export async function deleteOffer(id: string) {

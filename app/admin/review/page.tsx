@@ -37,6 +37,7 @@ export type CardGroup = {
   card_referral_url: string | null
   card_image_url: string | null
   card_is_active: boolean
+  card_has_no_bonus: boolean
   pending: OfferRow[]
   active: OfferRow[]
 }
@@ -55,7 +56,7 @@ export default async function ReviewPage() {
 
   // Active offers + card details for the same cards
   type ActiveOfferRaw = { id: string; card_id: string; headline: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; spend_timeframe_days: number | null; start_month: number | null; is_monthly_bonus: boolean; monthly_points_value: number | null; monthly_spend_requirement: number | null; bonus_months: number | null; offer_type: string; is_limited_time: boolean; expires_at: string | null; source_priority: number; source_name: string | null; review_status: string; is_active: boolean; scraped_at: string }
-  type CardDetailRaw = { id: string; name: string; slug: string; tier: string; annual_fee: number | null; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; is_active: boolean }
+  type CardDetailRaw = { id: string; name: string; slug: string; tier: string; annual_fee: number | null; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; is_active: boolean; has_no_bonus: boolean }
 
   const [{ data: activeRaw }, { data: cardDetails }] = await Promise.all([
     pendingCardIds.length
@@ -68,7 +69,7 @@ export default async function ReviewPage() {
     pendingCardIds.length
       ? supabaseAdmin
           .from('credit_cards')
-          .select('id, name, slug, tier, annual_fee, annual_fee_waived_first_year, short_description, referral_url, image_url, is_active')
+          .select('id, name, slug, tier, annual_fee, annual_fee_waived_first_year, short_description, referral_url, image_url, is_active, has_no_bonus')
           .in('id', pendingCardIds)
       : Promise.resolve({ data: [] as CardDetailRaw[] }),
   ])
@@ -111,6 +112,7 @@ export default async function ReviewPage() {
       card_referral_url: cd?.referral_url ?? null,
       card_image_url: cd?.image_url ?? null,
       card_is_active: cd?.is_active ?? true,
+      card_has_no_bonus: cd?.has_no_bonus ?? false,
       pending: pendingByCard.get(id) ?? [],
       active: activeByCard.get(id) ?? [],
     }

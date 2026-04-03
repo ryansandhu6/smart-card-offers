@@ -35,7 +35,7 @@ export default async function AdminDashboard() {
       .limit(30),
     supabaseAdmin
       .from('credit_cards')
-      .select('id, name, slug, short_description, referral_url')
+      .select('id, name, slug, short_description, referral_url, has_no_bonus')
       .eq('is_active', true),
     supabaseAdmin
       .from('card_offers')
@@ -57,7 +57,7 @@ export default async function AdminDashboard() {
   const qualityPct = offerCount ? Math.round(((qualityCount ?? 0) / offerCount) * 100) : 0
 
   // Cards needing attention
-  type ActiveCard = { id: string; name: string; slug: string; short_description: string | null; referral_url: string | null }
+  type ActiveCard = { id: string; name: string; slug: string; short_description: string | null; referral_url: string | null; has_no_bonus: boolean }
   type AttentionCard = { id: string; name: string; slug: string; issues: string[] }
 
   const pendingCardIdSet = new Set((pendingOffers ?? []).map((o: { card_id: string }) => o.card_id))
@@ -72,6 +72,7 @@ export default async function AdminDashboard() {
   const attentionCards: AttentionCard[] = []
   for (const card of (allActiveCards ?? []) as ActiveCard[]) {
     if (pendingCardIdSet.has(card.id)) continue
+    if (card.has_no_bonus) continue
     const issues: string[] = []
     const offers = offersByCard.get(card.id) ?? []
 

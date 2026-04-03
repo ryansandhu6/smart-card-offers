@@ -1,7 +1,7 @@
 'use client'
 import React, { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createOffer, updateOffer, deleteOffer } from '../actions'
+import { createOffer, updateOffer, deleteOffer, cleanupOrphanedOffers } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 
 const SOURCE_PRIORITY: Record<string, number> = {
@@ -30,7 +30,7 @@ type Offer = {
   source_name: string | null
   is_limited_time: boolean
   expires_at: string | null
-  card: { name: string; slug: string } | null
+  card: { name: string; slug: string; has_no_bonus: boolean } | null
 }
 
 type CardRow = {
@@ -42,6 +42,7 @@ type CardRow = {
   cashbackValue: number | null
   source_priority: number | null
   is_limited_time: boolean
+  hasNoBonus: boolean
 }
 
 type AdditionalDraft = {
@@ -69,10 +70,11 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
   const [error, setError]             = useState<string | null>(null)
   const [filter, setFilter]           = useState('')
   const [showInactive, setShowInactive] = useState(false)
+  const [cleanupMsg, setCleanupMsg]     = useState<string | null>(null)
   const router = useRouter()
 
   const visible = offers.filter(o => {
-    if (!showInactive && !o.is_active) return false
+    if (showInactive ? o.is_active : !o.is_active) return false
     if (!filter) return true
     const q = filter.toLowerCase()
     return (
@@ -102,10 +104,12 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
     const isLtd = allOffers.some(o => o.is_limited_time)
     const cashbacks = allOffers.map(o => o.cashback_value).filter((v): v is number => v != null)
     const cashbackValue = cashbacks.length > 0 ? Math.max(...cashbacks) : null
+    const hasNoBonus = g.offers[0]?.card?.has_no_bonus ?? false
     return {
       cardSlug: slug, cardName: g.cardName, cardId: g.offers[0]?.card_id ?? '',
       welcomeOffer: welcome, additionalOffers: additionals,
       cashbackValue, source_priority: sourcePriority, is_limited_time: isLtd,
+      hasNoBonus,
     }
   })
 
@@ -144,8 +148,26 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
             onChange={e => setShowInactive(e.target.checked)}
             className="h-4 w-4"
           />
-          Show inactive
+          {showInactive ? 'Showing inactive' : 'Show inactive'}
         </label>
+        <button
+          onClick={() => {
+            setCleanupMsg(null)
+            startTrans(async () => {
+              try {
+                const { deleted } = await cleanupOrphanedOffers()
+                setCleanupMsg(deleted === 0 ? 'No orphans found' : `Deleted ${deleted} orphaned offer${deleted !== 1 ? 's' : ''}`)
+                router.refresh()
+              } catch (e) {
+                setCleanupMsg(e instanceof Error ? e.message : 'Cleanup failed')
+              }
+            })
+          }}
+          disabled={isPending}
+          className="text-sm text-gray-500 border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50 disabled:opacity-40 whitespace-nowrap"
+        >
+          Cleanup Orphaned Offers
+        </button>
         {!showAdd && (
           <button
             onClick={() => setShowAdd(true)}
@@ -168,6 +190,9 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
       )}
+      {cleanupMsg && (
+        <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded px-3 py-2">{cleanupMsg}</p>
+      )}
 
       <div className="bg-white rounded-lg shadow overflow-x-auto">
         <table className="w-full text-sm">
@@ -187,7 +212,12 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
               <React.Fragment key={row.cardSlug}>
                 <tr className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <div className="font-medium">{row.cardName}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {row.cardName}
+                      {row.hasNoBonus && (
+                        <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">No bonus</span>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-400 font-mono">{row.cardSlug}</div>
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-blue-600 font-medium">

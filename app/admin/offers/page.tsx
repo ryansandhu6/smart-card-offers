@@ -12,7 +12,7 @@ export default async function OffersPage() {
         spend_timeframe_days, start_month, is_monthly_bonus, monthly_points_value, monthly_spend_requirement, bonus_months,
         is_active, offer_type, source_priority, source_name,
         is_limited_time, expires_at,
-        card:credit_cards ( name, slug )
+        card:credit_cards ( name, slug, has_no_bonus )
       `)
       .order('is_active', { ascending: false })
       .order('source_priority', { ascending: true })
@@ -36,7 +36,7 @@ export default async function OffersPage() {
     start_month: number | null
     source_priority: number | null; source_name: string | null
     is_limited_time: boolean; expires_at: string | null
-    card: { name: string; slug: string } | null
+    card: { name: string; slug: string; has_no_bonus: boolean } | null
   }
   const rows = (offers ?? []).map(o => ({
     ...o,

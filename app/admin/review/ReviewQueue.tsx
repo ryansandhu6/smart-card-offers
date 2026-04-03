@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer } from '../actions'
+import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer, setCardNoBonus } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 import type { CardGroup, OfferRow } from './page'
 
@@ -357,6 +357,7 @@ function CardSection({ group }: { group: CardGroup }) {
                   welcomeOffer={welcomePending ?? null}
                   additionalOffers={additionalPending}
                   cardId={group.card_id}
+                  cardHasNoBonus={group.card_has_no_bonus}
                   onDone={() => setShowEditOffers(false)}
                   onCancel={() => setShowEditOffers(false)}
                 />
@@ -374,17 +375,20 @@ function CardSection({ group }: { group: CardGroup }) {
 // ── Inline offer edit panel ───────────────────────────────────────────────────
 
 function ReviewOfferEditPanel({
-  welcomeOffer, additionalOffers, cardId, onDone, onCancel,
+  welcomeOffer, additionalOffers, cardId, cardHasNoBonus, onDone, onCancel,
 }: {
   welcomeOffer: OfferRow | null
   additionalOffers: OfferRow[]
   cardId: string
+  cardHasNoBonus: boolean
   onDone: () => void
   onCancel: () => void
 }) {
   const [isPending, startTrans] = useTransition()
   const [err, setErr]           = useState<string | null>(null)
   const router = useRouter()
+
+  const [noBonus, setNoBonus] = useState(cardHasNoBonus)
 
   const [wHeadline,  setWHeadline]  = useState(welcomeOffer?.headline ?? '')
   const [wPoints,    setWPoints]    = useState(welcomeOffer?.points_value?.toString() ?? '')
@@ -428,6 +432,13 @@ function ReviewOfferEditPanel({
     setErr(null)
     startTrans(async () => {
       try {
+        if (noBonus) {
+          await setCardNoBonus(cardId, true)
+          router.refresh()
+          onDone()
+          return
+        }
+
         // Welcome bonus
         if (welcomeOffer) {
           await updateOffer(welcomeOffer.id, {
@@ -535,6 +546,29 @@ function ReviewOfferEditPanel({
 
   return (
     <div className="px-5 py-4 bg-amber-50 border-t border-amber-100">
+      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer mb-4">
+        <input
+          type="checkbox"
+          checked={noBonus}
+          onChange={e => setNoBonus(e.target.checked)}
+          className="h-4 w-4"
+        />
+        <span className="font-medium">No welcome bonus available</span>
+        <span className="text-xs text-gray-400 font-normal">(marks card as no-bonus and skips offer creation)</span>
+      </label>
+      {noBonus ? (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={isPending}
+            className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-40"
+          >
+            {isPending ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={onCancel} disabled={isPending} className="text-sm text-gray-500 hover:underline disabled:opacity-40">Cancel</button>
+          {err && <span className="text-xs text-red-600">{err}</span>}
+        </div>
+      ) : (<>
       <div className="grid grid-cols-2 gap-6">
         {/* Welcome Bonus */}
         <div className="space-y-2">
@@ -699,6 +733,7 @@ function ReviewOfferEditPanel({
         </button>
         {err && <span className="text-xs text-red-600">{err}</span>}
       </div>
+      </>)}
     </div>
   )
 }
