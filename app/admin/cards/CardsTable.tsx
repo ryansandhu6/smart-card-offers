@@ -200,7 +200,8 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
               <th className="px-4 py-2 text-left">Name</th>
               <th className="px-4 py-2 text-left">Issuer</th>
               <th className="px-4 py-2 text-left">Tier</th>
-              <th className="px-4 py-2 text-left">Type</th>
+              <th className="px-4 py-2 text-right">Annual Fee</th>
+              <th className="px-4 py-2 text-left">FYF</th>
               <th className="px-4 py-2 text-left">Description</th>
               <th className="px-4 py-2 text-left">Active</th>
               <th className="px-4 py-2 text-left">Actions</th>
@@ -227,7 +228,7 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
                   />
             )}
             {visible.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">No cards found</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">No cards found</td></tr>
             )}
           </tbody>
         </table>
@@ -257,12 +258,7 @@ function ViewRow({
             <img src={card.image_url} alt="" className="h-8 w-8 object-contain flex-shrink-0" />
           )}
           <div>
-            <div className="font-medium">
-              {card.name}
-              {card.annual_fee_waived_first_year && (
-                <span className="text-xs bg-green-100 text-green-700 rounded px-1.5 py-0.5 inline-block ml-2">FYF</span>
-              )}
-            </div>
+            <div className="font-medium">{card.name}</div>
             <div className="text-xs text-gray-400 font-mono">{card.slug}</div>
           </div>
         </div>
@@ -271,7 +267,14 @@ function ViewRow({
       <td className="px-4 py-2.5">
         <TierBadge tier={card.tier} />
       </td>
-      <td className="px-4 py-2.5 text-gray-600 capitalize">{card.rewards_type}</td>
+      <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">
+        {card.annual_fee ? `$${card.annual_fee}` : <span className="text-gray-300">—</span>}
+      </td>
+      <td className="px-4 py-2.5">
+        {card.annual_fee_waived_first_year
+          ? <span className="text-green-600 font-medium">✓</span>
+          : <span className="text-gray-300">—</span>}
+      </td>
       <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs truncate">
         {card.short_description
           ? <span title={card.short_description}>{card.short_description.slice(0, 60)}{card.short_description.length > 60 ? '…' : ''}</span>
@@ -357,8 +360,8 @@ function EditRow({
             {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </td>
-        <td className="px-4 py-2.5 text-gray-600 capitalize">{card.rewards_type}</td>
-        <td className="px-4 py-2.5 text-xs text-gray-400 italic">see below</td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-gray-400 italic text-xs">see below</td>
+        <td className="px-4 py-2.5 text-gray-400 italic text-xs">see below</td>
         <td className="px-4 py-2.5">
           <input
             type="checkbox"
@@ -392,7 +395,7 @@ function EditRow({
         </td>
       </tr>
       <tr className="bg-blue-50 border-t border-blue-100">
-        <td colSpan={7} className="px-4 pb-3 space-y-2">
+        <td colSpan={8} className="px-4 pb-3 space-y-2">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Short description</label>
             <textarea
