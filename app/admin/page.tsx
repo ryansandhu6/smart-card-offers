@@ -41,8 +41,7 @@ export default async function AdminDashboard() {
       .from('card_offers')
       .select('*', { count: 'exact', head: true })
       .eq('is_active', true)
-      .not('spend_requirement', 'is', null)
-      .not('details', 'is', null),
+      .not('spend_requirement', 'is', null),
     supabaseAdmin
       .from('card_offers')
       .select('card_id, points_value, cashback_value, headline, is_monthly_bonus, monthly_points_value, monthly_spend_requirement, monthly_cashback_value')
@@ -53,8 +52,13 @@ export default async function AdminDashboard() {
       .eq('review_status', 'pending_review'),
   ])
 
-  // Data quality score: % of active offers with both details and spend_requirement
-  const qualityPct = offerCount ? Math.round(((qualityCount ?? 0) / offerCount) * 100) : 0
+  // Data quality score: blend of
+  //   (a) offers with spend_requirement filled  /  total active offers
+  //   (b) active cards with short_description   /  total active cards
+  const descCount = (allActiveCards ?? []).filter((c: { short_description: string | null }) => c.short_description).length
+  const spendPct = offerCount ? (qualityCount ?? 0) / offerCount : 0
+  const descPct  = (cardCount ?? 0) > 0 ? descCount / (cardCount ?? 1) : 0
+  const qualityPct = Math.round(((spendPct + descPct) / 2) * 100)
 
   // Cards needing attention
   type ActiveCard = { id: string; name: string; slug: string; short_description: string | null; referral_url: string | null; has_no_bonus: boolean }
@@ -115,7 +119,7 @@ export default async function AdminDashboard() {
         <StatPct
           label="Data Quality"
           pct={qualityPct}
-          sub="description + spend filled"
+          sub={`spend req. ${Math.round(spendPct * 100)}% · desc ${Math.round(descPct * 100)}%`}
         />
       </div>
 
