@@ -132,6 +132,14 @@ export interface ScrapedOffer {
   image_url?: string   // scraped card image — saved to credit_cards.image_url if not already set
   // Earn rate multipliers to save back to credit_cards (only written if currently NULL).
   earn_rate_multipliers?: Record<string, number>
+  // Card-level fields scraped from individual card pages (e.g. PrinceOfTravel).
+  // Each is written back to credit_cards only when the DB value is NULL (or 0 for fees).
+  card_annual_fee?: number               // written only when DB annual_fee = 0
+  card_annual_fee_waived?: boolean       // written only when DB value is NULL
+  card_supplementary_fee?: number        // written only when DB supplementary_card_fee is NULL
+  card_foreign_transaction_fee?: number | null  // written only when DB value is NULL; 0 = no fee
+  card_min_income?: number               // written only when DB min_income is NULL
+  card_min_household_income?: number     // written only when DB minimum_household_income is NULL
   // Per-offer trust overrides — if set, take precedence over the scraper class defaults.
   // Use these to downgrade individual offers that came from a hardcoded fallback rather
   // than a live scrape (e.g. sourcePriority: 3, isVerified: false).

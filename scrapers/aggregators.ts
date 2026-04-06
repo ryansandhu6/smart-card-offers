@@ -545,27 +545,29 @@ export class PrinceOfTravelScraper extends BaseScraper {
     // ── Card name ─────────────────────────────────────────────────────────
     const cardName = (
       $('h1').first().text().trim() ||
-      $('title').text().split(/[|–-]/)[0].trim()
-    ).replace(/\s+/g, ' ')
+      $('title').text().split(/[|–\-]/)[0].trim()
+    )
+      .replace(/[^\x20-\x7E]+/g, ' ')   // strip non-ASCII: ® ™ © etc.
+      .replace(/\s*\bReview\b.*$/i, '')  // strip " Review" suffix and anything after
+      .replace(/\s+/g, ' ')
+      .trim()
+
     if (!cardName || cardName.length < 5) return null
 
     const issuer_slug = resolveIssuer(cardName)
     if (!KNOWN_ISSUER_SLUGS.has(issuer_slug)) return null
 
     // ── Card image ────────────────────────────────────────────────────────
-    // PoT renders the card art in the hero section. Skip tiny icons / logos.
     let image_url: string | undefined
-    // Prefer <img> whose src contains the card slug or "card" keyword
     const urlSlug = url.split('/').filter(Boolean).pop() ?? ''
     $('main img, article img, section img, div[class*="hero"] img, div[class*="card"] img').each((_, img) => {
       if (image_url) return
       const src = $(img).attr('src') ?? $(img).attr('data-src') ?? ''
       if (!src || src.startsWith('data:') || src.includes('logo') || src.includes('icon')) return
       const w = parseInt($(img).attr('width') ?? '0')
-      if (w && w < 80) return // skip tiny thumbnails
+      if (w && w < 80) return
       image_url = src.startsWith('http') ? src : `${this.BASE_URL}${src}`
     })
-    // Fallback: first img in the page body that looks like a card
     if (!image_url) {
       $('img').each((_, img) => {
         if (image_url) return
@@ -592,24 +594,149 @@ export class PrinceOfTravelScraper extends BaseScraper {
         apply_url = href.startsWith('http') ? href : `${this.BASE_URL}${href}`
       }
     })
-    // If no explicit apply link, use the PoT card page itself as the source
     if (!apply_url) apply_url = url
+
+    // ── Annual fee + first-year rebate + supplementary fee ────────────────
+    // Primary: scan Bonuses & Fees table rows (TIER/AMOUNT cols, FEES rows)
+    let card_annual_fee: number | undefined
+    let card_annual_fee_waived: boolean | undefined
+    let card_supplementary_fee: number | undefined
+
+    $('table tr').each((_, tr) => {
+      const cells = $(tr).find('td, th').map((_, td) => $(td).text().replace(/\s+/g, ' ').trim()).get()
+      if (cells.length < 2) return
+      const label = cells[0].toLowerCase()
+      const value = cells[1]
+
+      if (/annual\s*fee/i.test(label) && !/additional|supplementary/i.test(label) && card_annual_fee == null) {
+        if (/no\s*(?:annual\s*)?fee|free|\$?0\b/i.test(value)) {
+          card_annual_fee = 0
+        } else {
+          const m = value.match(/\$?([\d,]+)/)
+          if (m) card_annual_fee = parseInt(m[1].replace(/,/g, ''))
+        }
+      }
+
+      if (/first.year|first-year|annual\s*fee\s*rebate|waived/i.test(label) && card_annual_fee_waived == null) {
+        // If the value mentions a dollar amount or "rebate" / "free", it's waived
+        if (/\$[\d,]+|rebate|free|waived/i.test(value)) {
+          card_annual_fee_waived = true
+        }
+      }
+
+      if (/additional\s*card|supplementary/i.test(label) && card_supplementary_fee == null) {
+        if (/no\s*fee|free|\$?0\b/i.test(value)) {
+          card_supplementary_fee = 0
+        } else {
+          const m = value.match(/\$?([\d,]+)/)
+          if (m) card_supplementary_fee = parseInt(m[1].replace(/,/g, ''))
+        }
+      }
+    })
+
+    // Fallback: scan body text for annual fee
+    if (card_annual_fee == null) {
+      $('p, li, span').each((_, el) => {
+        if (card_annual_fee != null) return
+        if ($(el).children('p, li').length > 2) return  // skip containers
+        const t = $(el).text().replace(/\s+/g, ' ').trim()
+        if (!/annual\s*fee/i.test(t)) return
+        if (/no\s*(?:annual\s*)?fee/i.test(t)) {
+          card_annual_fee = 0
+        } else {
+          const m = t.match(/\$?([\d,]+)/)
+          if (m) card_annual_fee = parseInt(m[1].replace(/,/g, ''))
+        }
+      })
+    }
+
+    // Scan full body text for "first year free / rebate" signals
+    if (card_annual_fee_waived == null) {
+      const bodyText = $('body').text().replace(/\s+/g, ' ')
+      if (/first.year\s*(?:free|rebate|waived)|annual\s*fee\s*waived\s*(?:in\s*the\s*)?first\s*year/i.test(bodyText) ||
+          /First\s*Year\s*Rebate/i.test(bodyText)) {
+        card_annual_fee_waived = true
+      }
+    }
+
+    // ── Minimum income ────────────────────────────────────────────────────
+    let card_min_income: number | undefined
+    let card_min_household_income: number | undefined
+
+    const bodyText = $('body').text().replace(/\s+/g, ' ')
+
+    // "Minimum income: $60,000 personal or $100,000 household"
+    // "Minimum income: $60,000 (individual) / $100,000 (household)"
+    const incomeMatch = bodyText.match(
+      /minimum\s+income[:\s]+\$?([\d,]+)(?:[^$\n]{0,60}\$?([\d,]+)\s*household)?/i
+    )
+    if (incomeMatch) {
+      card_min_income = parseInt(incomeMatch[1].replace(/,/g, ''))
+      if (incomeMatch[2]) card_min_household_income = parseInt(incomeMatch[2].replace(/,/g, ''))
+    }
+
+    // ── No FX fee indicator ───────────────────────────────────────────────
+    let card_foreign_transaction_fee: number | null | undefined
+    if (/no\s+(?:foreign\s+)?(?:transaction\s+)?fee|no\s+fx\s+fee|\bno\s+fx\b/i.test(bodyText)) {
+      card_foreign_transaction_fee = 0  // 0 = no fee
+    }
+
+    // ── Earn-rate multipliers ─────────────────────────────────────────────
+    const earn_rate_multipliers: Record<string, number> = {}
+
+    // Strategy A: Earning Rewards table (CATEGORY / RATE columns)
+    $('table').each((_, table) => {
+      const $table = $(table)
+      const headerCells = $table.find('tr').first().find('th, td').map((_, th) => $(th).text().trim().toLowerCase()).get()
+      const catIdx = headerCells.findIndex(h => /category|type|description/i.test(h))
+      const rateIdx = headerCells.findIndex(h => /rate|earn|point|multiple/i.test(h))
+      if (catIdx === -1 || rateIdx === -1) return
+
+      $table.find('tr').slice(1).each((_, tr) => {
+        const cells = $(tr).find('td').map((_, td) => $(td).text().replace(/\s+/g, ' ').trim()).get()
+        if (!cells[catIdx] || !cells[rateIdx]) return
+        const category = cells[catIdx].toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '').replace(/_+/g, '_')
+        const rateMatch = cells[rateIdx].match(/(\d+(?:\.\d+)?)/)
+        if (rateMatch && category && category.length >= 3) {
+          const rate = parseFloat(rateMatch[1])
+          if (rate >= 1 && rate <= 30 && !earn_rate_multipliers[category]) {
+            earn_rate_multipliers[category] = rate
+          }
+        }
+      })
+    })
+
+    // Strategy B: text-based earn rate lines
+    if (Object.keys(earn_rate_multipliers).length === 0) {
+      $('li, p, td, span').each((_, el) => {
+        if ($(el).children('li, p, td').length > 0) return
+        const text = $(el).text().replace(/\s+/g, ' ').trim()
+        const re = /(?:earn\s+)?(\d+(?:\.\d+)?)\s*(?:x|pts?|points?|miles?)\s*(?:per\s*\$1\s*)?(?:on|for|at|in)\s+([a-z &]+?)(?:\s*\.|,|;|—|$)/gi
+        let m: RegExpExecArray | null
+        while ((m = re.exec(text)) !== null) {
+          const rate = parseFloat(m[1])
+          const category = m[2].trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '')
+          if (category && rate >= 1 && rate <= 30 && !earn_rate_multipliers[category]) {
+            earn_rate_multipliers[category] = rate
+          }
+        }
+      })
+    }
 
     // ── Welcome offer section ─────────────────────────────────────────────
     let headline = ''
     const bulletPoints: string[] = []
     let expires_at: string | undefined
     let points_value: number | undefined
+    let cashback_value: number | undefined
     let spend_requirement: number | undefined
     let spend_timeframe_days: number | undefined
 
-    // Strategy A: find heading labelled "Welcome Offer" / "Welcome Bonus",
-    // then harvest the following <ul>/<ol>/<p> siblings.
+    // Strategy A: heading labelled "Welcome Offer" / "Welcome Bonus"
     $('h2, h3, h4, h5').each((_, heading) => {
       const headingText = $(heading).text().trim()
       if (!/welcome\s*(offer|bonus)/i.test(headingText)) return
 
-      // Walk siblings until the next heading
       let $el = $(heading).next()
       let gathered = 0
       while ($el.length && gathered < 10) {
@@ -629,9 +756,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
       }
     })
 
-    // Strategy B: look for "Welcome bonus" label <span> (same pattern as the
-    // /best-credit-cards/ pages — cards appear twice, deduplication not needed
-    // here since we are on a single-card page).
+    // Strategy B: "Welcome bonus" label <span>
     if (bulletPoints.length === 0) {
       $('span, p, div').each((_, el) => {
         if (headline) return
@@ -643,20 +768,26 @@ export class PrinceOfTravelScraper extends BaseScraper {
       })
     }
 
-    // Strategy C: page-wide text scan looking for offer-keyword sentences
+    // Strategy C: page-wide text scan
     if (bulletPoints.length === 0 && !headline) {
       scanPageOffers($).forEach(t => bulletPoints.push(t))
     }
 
-    // ── Parse values out of bullet points ────────────────────────────────
-    // Use the MAXIMUM parsed points value across all bullets — the welcome bonus
-    // is always the largest number. Taking the first match risks picking up a
-    // CPP dollar-value sentence or a small per-month/anniversary earn-rate item
-    // that appears earlier in the DOM than the main bonus headline.
+    // ── Parse values from bullet points ──────────────────────────────────
+    // Take MAX points value (welcome bonus is always the largest number).
     let maxPoints: number | undefined
+    let maxCash: number | undefined
     for (const bullet of bulletPoints) {
       const v = this.parsePoints(bullet)
       if (v != null && (maxPoints == null || v > maxPoints)) maxPoints = v
+
+      // Cashback: "$250 cash back", "$200 cashback"
+      const cashMatch = bullet.match(/\$([\d,]+)\s*cash\s*back/i)
+      if (cashMatch) {
+        const cv = parseFloat(cashMatch[1].replace(/,/g, ''))
+        if (!maxCash || cv > maxCash) maxCash = cv
+      }
+
       if (!spend_requirement) {
         const s = this.parseSpend(bullet)
         if (s) { spend_requirement = s.amount; spend_timeframe_days = s.days }
@@ -666,39 +797,22 @@ export class PrinceOfTravelScraper extends BaseScraper {
       }
     }
     points_value = maxPoints
+    cashback_value = maxCash
 
-    // Build headline: first meaningful bullet, or the value from the label span
-    if (!headline) {
-      headline = bulletPoints[0] ?? ''
-    }
-    if (!headline) headline = cardName // last resort
+    // Build headline from first meaningful bullet or label span
+    if (!headline) headline = bulletPoints[0] ?? ''
+    if (!headline) headline = cardName
 
-    // Pick up points / spend from headline too if bullets were empty
+    // Pick up values from headline if bullets were empty
     if (!points_value) points_value = this.parsePoints(headline)
+    if (!cashback_value) {
+      const cashMatch = headline.match(/\$([\d,]+)\s*cash\s*back/i)
+      if (cashMatch) cashback_value = parseFloat(cashMatch[1].replace(/,/g, ''))
+    }
     if (!spend_requirement) {
       const s = this.parseSpend(headline)
       if (s) { spend_requirement = s.amount; spend_timeframe_days = s.days }
     }
-
-    // ── Earn-rate multipliers ─────────────────────────────────────────────
-    // Look for leaf text nodes that describe per-category earn rates,
-    // e.g. "Earn 3 points per $1 on dining" or "3x points on groceries"
-    const earn_rate_multipliers: Record<string, number> = {}
-    $('li, p, td, span').each((_, el) => {
-      // Only process leaf / near-leaf nodes to avoid double-counting parents
-      if ($(el).children('li, p, td').length > 0) return
-      const text = $(el).text().replace(/\s+/g, ' ').trim()
-      // Match patterns like "3x points on dining" or "Earn 5 points per $1 on travel"
-      const re = /(?:earn\s+)?(\d+(?:\.\d+)?)\s*(?:x|pts?|points?|miles?)\s*(?:per\s*\$1\s*)?(?:on|for|at|in)\s+([a-z &]+?)(?:\s*\.|,|;|—|$)/gi
-      let m: RegExpExecArray | null
-      while ((m = re.exec(text)) !== null) {
-        const rate = parseFloat(m[1])
-        const category = m[2].trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '')
-        if (category && rate >= 1 && rate <= 30 && !earn_rate_multipliers[category]) {
-          earn_rate_multipliers[category] = rate
-        }
-      }
-    })
 
     if (!headline || headline.length < 5) return null
 
@@ -711,6 +825,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
         ? bulletPoints.join(' • ').slice(0, 1000)
         : undefined,
       points_value,
+      cashback_value,
       spend_requirement,
       spend_timeframe_days,
       extra_perks: bulletPoints.length > 1 ? bulletPoints.slice(1, 6) : undefined,
@@ -722,6 +837,12 @@ export class PrinceOfTravelScraper extends BaseScraper {
       earn_rate_multipliers: Object.keys(earn_rate_multipliers).length
         ? earn_rate_multipliers
         : undefined,
+      card_annual_fee,
+      card_annual_fee_waived,
+      card_supplementary_fee,
+      card_foreign_transaction_fee,
+      card_min_income,
+      card_min_household_income,
     }
   }
 }

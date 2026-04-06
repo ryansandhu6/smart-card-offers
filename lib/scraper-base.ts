@@ -227,17 +227,43 @@ export abstract class BaseScraper {
 
         if (card) {
           card_id = card.id
-          const cardUpdates: Record<string, unknown> = {}
-          if (offer.image_url) cardUpdates.image_url = offer.image_url
-          if (offer.earn_rate_multipliers && Object.keys(offer.earn_rate_multipliers).length) {
-            cardUpdates.earn_rate_multipliers = offer.earn_rate_multipliers
+
+          // ── Null-guarded card writes ─────────────────────────────────────
+          // Each field is only written when the DB value is currently NULL.
+          // We run separate queries per field to avoid AND-chaining conditions
+          // (which would skip ALL updates if even one field is already populated).
+          if (offer.image_url) {
+            await supabaseAdmin.from('credit_cards').update({ image_url: offer.image_url })
+              .eq('id', card_id).is('image_url', null)
           }
-          if (Object.keys(cardUpdates).length) {
-            // Build query — only write fields that are currently NULL
-            let q = supabaseAdmin.from('credit_cards').update(cardUpdates).eq('id', card_id)
-            if (cardUpdates.image_url) q = q.is('image_url', null)
-            if (cardUpdates.earn_rate_multipliers) q = q.is('earn_rate_multipliers', null)
-            await q
+          if (offer.earn_rate_multipliers && Object.keys(offer.earn_rate_multipliers).length) {
+            await supabaseAdmin.from('credit_cards').update({ earn_rate_multipliers: offer.earn_rate_multipliers })
+              .eq('id', card_id).is('earn_rate_multipliers', null)
+          }
+          if (offer.card_annual_fee_waived != null) {
+            await supabaseAdmin.from('credit_cards').update({ annual_fee_waived_first_year: offer.card_annual_fee_waived })
+              .eq('id', card_id).is('annual_fee_waived_first_year', null)
+          }
+          if (offer.card_supplementary_fee != null) {
+            await supabaseAdmin.from('credit_cards').update({ supplementary_card_fee: offer.card_supplementary_fee })
+              .eq('id', card_id).is('supplementary_card_fee', null)
+          }
+          if (offer.card_foreign_transaction_fee != null) {
+            await supabaseAdmin.from('credit_cards').update({ foreign_transaction_fee: offer.card_foreign_transaction_fee })
+              .eq('id', card_id).is('foreign_transaction_fee', null)
+          }
+          if (offer.card_min_income != null) {
+            await supabaseAdmin.from('credit_cards').update({ min_income: offer.card_min_income })
+              .eq('id', card_id).is('min_income', null)
+          }
+          if (offer.card_min_household_income != null) {
+            await supabaseAdmin.from('credit_cards').update({ minimum_household_income: offer.card_min_household_income })
+              .eq('id', card_id).is('minimum_household_income', null)
+          }
+          // Annual fee only written when DB value is still the default (0).
+          if (offer.card_annual_fee != null) {
+            await supabaseAdmin.from('credit_cards').update({ annual_fee: offer.card_annual_fee })
+              .eq('id', card_id).eq('annual_fee', 0)
           }
         } else {
           card_id = await this.ensureCard(offer)
@@ -289,14 +315,18 @@ export abstract class BaseScraper {
     const incomingVerified = offer.isVerified ?? this.isVerified
     const confidence = this.computeConfidence(incomingPriority, incomingVerified, now)
 
-    // Check if an offer with the same natural key already exists
-    const { data: existing } = await supabaseAdmin
+    // Check if an offer already exists for this (card_id, offer_type).
+    // For welcome_bonus the DB has a partial unique constraint (card_id) WHERE offer_type='welcome_bonus',
+    // so we cannot insert a second row even with a different headline — look up without headline.
+    // For other types, headlines distinguish rows.
+    const existingBaseQuery = supabaseAdmin
       .from('card_offers')
       .select('id, source_priority, review_status, points_value, cashback_value, spend_requirement')
       .eq('card_id', card_id)
       .eq('offer_type', offer.offer_type)
-      .eq('headline', offer.headline)
-      .maybeSingle()
+    const { data: existing } = offer.offer_type === 'welcome_bonus'
+      ? await existingBaseQuery.maybeSingle()
+      : await existingBaseQuery.eq('headline', offer.headline).maybeSingle()
 
     if (existing) {
       const existingPriority = existing.source_priority ?? 99
@@ -333,9 +363,12 @@ export abstract class BaseScraper {
         return 'skipped'
       } else {
         // Incoming source has strictly higher trust (lower number) — full overwrite.
+        // Also update headline: for welcome_bonus the existing row may have a different
+        // headline from a prior scrape (headline is not part of the lookup key).
         const { error } = await supabaseAdmin
           .from('card_offers')
           .update({
+            headline: offer.headline,
             details: offer.details,
             points_value: offer.points_value,
             cashback_value: offer.cashback_value,
@@ -543,14 +576,17 @@ export abstract class BaseScraper {
   }
 
   protected parsePoints(text: string): number | undefined {
-    const match = text.match(/([\d,]+)\s*(points?|miles?|MR|Scene\+)/i)
+    // Handles "60,000 Aeroplan points", "35,000 Avion points", "15,000 Asia Miles",
+    // "1,250 Membership Rewards points", "30,000 Avios", "20,000 points".
+    // Allows up to 3 intermediate words (program name) before the unit keyword.
+    const match = text.match(/([\d,]+)\s*(?:[A-Za-z+.]+\s+){0,3}(points?|miles?|Avios|MR|Scene\+|rewards?)/i)
     if (!match) return undefined
     return parseInt(match[1].replace(/,/g, ''))
   }
 
   protected parseSpend(text: string): { amount: number; days: number } | undefined {
-    // Matches "$10,000 in 3 months" or "$1,500 spend in 90 days"
-    const match = text.match(/\$?([\d,]+)\s*(?:spend)?\s*in\s*(\d+)\s*(month|day)/i)
+    // Matches "$10,000 in the first 3 months", "$1,500 spending in 3 months", "$500 in 90 days"
+    const match = text.match(/\$?([\d,]+)\s*(?:spending?)?\s*in\s*(?:the\s+)?(?:first\s+)?(\d+)\s*(month|day)/i)
     if (!match) return undefined
     const amount = parseInt(match[1].replace(/,/g, ''))
     const num = parseInt(match[2])
