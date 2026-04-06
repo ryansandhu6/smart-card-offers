@@ -23,6 +23,7 @@ type Offer = {
   is_monthly_bonus: boolean
   monthly_points_value: number | null
   monthly_spend_requirement: number | null
+  monthly_cashback_value: number | null
   bonus_months: number | null
   is_active: boolean
   offer_type: string
@@ -57,6 +58,7 @@ type AdditionalDraft = {
   is_active: boolean
   isMonthly: boolean
   monthlyPoints: string
+  monthlyCash: string
   monthlySpend: string
   bonusMonths: string
 }
@@ -324,6 +326,7 @@ function CardEditPanel({
   const [wStartMonth,   setWStartMonth]   = useState(welcomeOffer?.start_month?.toString() ?? '')
   const [wIsMonthly,    setWIsMonthly]    = useState(welcomeOffer?.is_monthly_bonus ?? false)
   const [wMonthlyPts,   setWMonthlyPts]   = useState(welcomeOffer?.monthly_points_value?.toString() ?? '')
+  const [wMonthlyCash,  setWMonthlyCash]  = useState(welcomeOffer?.monthly_cashback_value?.toString() ?? '')
   const [wMonthlySpend, setWMonthlySpend] = useState(welcomeOffer?.monthly_spend_requirement?.toString() ?? '')
   const [wBonusMonths,  setWBonusMonths]  = useState(welcomeOffer?.bonus_months?.toString() ?? '')
 
@@ -340,6 +343,7 @@ function CardEditPanel({
       is_active: o.is_active,
       isMonthly: o.is_monthly_bonus ?? false,
       monthlyPoints: o.monthly_points_value?.toString() ?? '',
+      monthlyCash: o.monthly_cashback_value?.toString() ?? '',
       monthlySpend: o.monthly_spend_requirement?.toString() ?? '',
       bonusMonths: o.bonus_months?.toString() ?? '',
     }))
@@ -365,6 +369,7 @@ function CardEditPanel({
             start_month: wStartMonth ? Number(wStartMonth) : null,
             is_monthly_bonus: wIsMonthly,
             monthly_points_value: wIsMonthly && wMonthlyPts ? Number(wMonthlyPts) : null,
+            monthly_cashback_value: wIsMonthly && wMonthlyCash ? Number(wMonthlyCash) : null,
             monthly_spend_requirement: wIsMonthly && wMonthlySpend ? Number(wMonthlySpend) : null,
             bonus_months: wIsMonthly && wBonusMonths ? Number(wBonusMonths) : null,
             is_active: welcomeOffer.is_active,
@@ -383,6 +388,7 @@ function CardEditPanel({
             start_month: wStartMonth ? Number(wStartMonth) : null,
             is_monthly_bonus: wIsMonthly,
             monthly_points_value: wIsMonthly && wMonthlyPts ? Number(wMonthlyPts) : null,
+            monthly_cashback_value: wIsMonthly && wMonthlyCash ? Number(wMonthlyCash) : null,
             monthly_spend_requirement: wIsMonthly && wMonthlySpend ? Number(wMonthlySpend) : null,
             bonus_months: wIsMonthly && wBonusMonths ? Number(wBonusMonths) : null,
             source_name: 'manual',
@@ -408,6 +414,7 @@ function CardEditPanel({
               start_month: draft.startMonth ? Number(draft.startMonth) : null,
               is_monthly_bonus: draft.isMonthly,
               monthly_points_value: draft.isMonthly && draft.monthlyPoints ? Number(draft.monthlyPoints) : null,
+              monthly_cashback_value: draft.isMonthly && draft.monthlyCash ? Number(draft.monthlyCash) : null,
               monthly_spend_requirement: draft.isMonthly && draft.monthlySpend ? Number(draft.monthlySpend) : null,
               bonus_months: draft.isMonthly && draft.bonusMonths ? Number(draft.bonusMonths) : null,
               is_active: orig?.is_active ?? true,
@@ -426,6 +433,7 @@ function CardEditPanel({
               start_month: draft.startMonth ? Number(draft.startMonth) : null,
               is_monthly_bonus: draft.isMonthly,
               monthly_points_value: draft.isMonthly && draft.monthlyPoints ? Number(draft.monthlyPoints) : null,
+              monthly_cashback_value: draft.isMonthly && draft.monthlyCash ? Number(draft.monthlyCash) : null,
               monthly_spend_requirement: draft.isMonthly && draft.monthlySpend ? Number(draft.monthlySpend) : null,
               bonus_months: draft.isMonthly && draft.bonusMonths ? Number(draft.bonusMonths) : null,
               source_name: 'manual',
@@ -498,6 +506,10 @@ function CardEditPanel({
               <div>
                 <label className={labelCls}>Points/month</label>
                 <input type="number" value={wMonthlyPts} onChange={e => setWMonthlyPts(e.target.value)} placeholder="—" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Cashback/month ($)</label>
+                <input type="number" step="0.01" value={wMonthlyCash} onChange={e => setWMonthlyCash(e.target.value)} placeholder="—" className={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>Spend/month ($)</label>
@@ -576,6 +588,10 @@ function CardEditPanel({
                       <input type="number" value={draft.monthlyPoints} onChange={e => updateDraft(i, { monthlyPoints: e.target.value })} placeholder="—" className={inputCls} />
                     </div>
                     <div>
+                      <label className={labelCls}>Cashback/month ($)</label>
+                      <input type="number" step="0.01" value={draft.monthlyCash} onChange={e => updateDraft(i, { monthlyCash: e.target.value })} placeholder="—" className={inputCls} />
+                    </div>
+                    <div>
                       <label className={labelCls}>Spend/month ($)</label>
                       <input type="number" value={draft.monthlySpend} onChange={e => updateDraft(i, { monthlySpend: e.target.value })} placeholder="—" className={inputCls} />
                     </div>
@@ -612,7 +628,7 @@ function CardEditPanel({
           <button
             onClick={() => setAdditionalDrafts(prev => [
               ...prev,
-              { id: undefined, points: '', cash: '', spend: '', timeframeDays: '', startMonth: '', ltd: false, expires: '', is_active: true, isMonthly: false, monthlyPoints: '', monthlySpend: '', bonusMonths: '' },
+              { id: undefined, points: '', cash: '', spend: '', timeframeDays: '', startMonth: '', ltd: false, expires: '', is_active: true, isMonthly: false, monthlyPoints: '', monthlyCash: '', monthlySpend: '', bonusMonths: '' },
             ])}
             disabled={isPending}
             className="text-xs text-purple-600 hover:underline disabled:opacity-40"

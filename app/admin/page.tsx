@@ -45,7 +45,7 @@ export default async function AdminDashboard() {
       .not('details', 'is', null),
     supabaseAdmin
       .from('card_offers')
-      .select('card_id, points_value, cashback_value, headline')
+      .select('card_id, points_value, cashback_value, headline, is_monthly_bonus, monthly_points_value, monthly_spend_requirement, monthly_cashback_value')
       .eq('is_active', true),
     supabaseAdmin
       .from('card_offers')
@@ -62,7 +62,7 @@ export default async function AdminDashboard() {
 
   const pendingCardIdSet = new Set((pendingOffers ?? []).map((o: { card_id: string }) => o.card_id))
 
-  const offersByCard = new Map<string, { points_value: number | null; cashback_value: number | null; headline: string }[]>()
+  const offersByCard = new Map<string, { points_value: number | null; cashback_value: number | null; headline: string; is_monthly_bonus: boolean; monthly_points_value: number | null; monthly_spend_requirement: number | null; monthly_cashback_value: number | null }[]>()
   for (const o of allActiveOffers ?? []) {
     const list = offersByCard.get(o.card_id) ?? []
     list.push(o)
@@ -79,7 +79,11 @@ export default async function AdminDashboard() {
     if (!card.short_description) issues.push('no description')
     if (offers.length === 0) issues.push('no active offers')
     if (offers.some(o => o.headline?.includes('$undefined'))) issues.push('$undefined headline')
-    if (offers.some(o => (o.points_value === 0 || o.points_value == null) && (o.cashback_value === 0 || o.cashback_value == null))) issues.push('zero-value offer')
+    if (offers.some(o =>
+      (o.points_value === 0 || o.points_value == null) &&
+      (o.cashback_value === 0 || o.cashback_value == null) &&
+      !(o.is_monthly_bonus && ((o.monthly_points_value ?? 0) > 0 || (o.monthly_spend_requirement ?? 0) > 0 || (o.monthly_cashback_value ?? 0) > 0))
+    )) issues.push('zero-value offer')
     if (!card.referral_url) issues.push('no referral URL')
 
     if (issues.length > 0) attentionCards.push({ id: card.id, name: card.name, slug: card.slug, issues })
