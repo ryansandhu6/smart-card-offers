@@ -81,7 +81,35 @@ This flag compares the current offer against a 12-month rolling average from the
 )}
 ```
 
-### 5. Points values are integers, cashback values are decimals
+### 5. Monthly bonus offers have separate fields
+
+Some cards (like the Amex Cobalt) have recurring monthly bonuses instead of a single one-time welcome bonus. Check `is_monthly_bonus` before deciding how to render an offer:
+
+```tsx
+if (offer.is_monthly_bonus) {
+  // monthly recurring — show monthly value × bonus_months
+  const total = (offer.monthly_points_value ?? 0) * (offer.bonus_months ?? 12)
+  return `${offer.monthly_points_value?.toLocaleString()} pts/month for ${offer.bonus_months} months (${total.toLocaleString()} total)`
+} else {
+  // standard one-time bonus
+  return `${offer.points_value?.toLocaleString()} pts`
+}
+```
+
+Monthly bonus fields (all nullable):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `is_monthly_bonus` | boolean | True when the bonus is paid out monthly |
+| `monthly_points_value` | integer | Points earned per month |
+| `monthly_spend_requirement` | number | Monthly spend needed to earn the bonus |
+| `monthly_cashback_value` | number | Monthly cashback (if cashback card) |
+| `bonus_months` | integer | How many months the bonus runs (e.g. 12) |
+| `start_month` | integer | Which billing month the bonus starts (usually null/1) |
+
+`points_value` on a monthly offer stores the **total** across all months. Use `monthly_points_value × bonus_months` for display.
+
+### 6. Points values are integers, cashback values are decimals
 
 `points_value` is an `INTEGER` (e.g. `70000`). `cashback_value` is a `NUMERIC` returned as a string from Postgres (e.g. `"2.00"`). Always `parseFloat()` before doing math on cashback values.
 
@@ -165,7 +193,13 @@ Card listing with filters. Use this for the main cards grid.
           "is_verified": true,
           "source_priority": 1,
           "confidence_score": 100,
-          "last_seen_at": "2026-03-25T06:00:00Z"
+          "last_seen_at": "2026-03-25T06:00:00Z",
+          "is_monthly_bonus": false,
+          "monthly_points_value": null,
+          "monthly_spend_requirement": null,
+          "monthly_cashback_value": null,
+          "bonus_months": null,
+          "start_month": null
         }
       ]
     }
@@ -236,7 +270,13 @@ Single card with full details. Use this for the card detail page.
         "source_url": "https://princeoftravel.com/...",
         "scraped_at": "2026-03-25T06:00:00Z",
         "last_seen_at": "2026-03-25T06:00:00Z",
-        "is_better_than_usual": false
+        "is_better_than_usual": false,
+        "is_monthly_bonus": false,
+        "monthly_points_value": null,
+        "monthly_spend_requirement": null,
+        "monthly_cashback_value": null,
+        "bonus_months": null,
+        "start_month": null
       }
     ]
   }
@@ -288,6 +328,7 @@ Side-by-side comparison of 2–3 cards. Use this for the comparison tool.
       "lounge_access": false,
       "travel_insurance": true,
       "tier": "entry",
+      "has_no_bonus": false,
       "issuer": { "name": "American Express", "slug": "amex" },
       "best_offer": {
         "offer_type": "welcome_bonus",
@@ -297,7 +338,13 @@ Side-by-side comparison of 2–3 cards. Use this for the comparison tool.
         "spend_requirement": 750,
         "spend_timeframe_days": 360,
         "is_limited_time": false,
-        "is_better_than_usual": false
+        "is_better_than_usual": false,
+        "is_monthly_bonus": false,
+        "monthly_points_value": null,
+        "monthly_spend_requirement": null,
+        "monthly_cashback_value": null,
+        "bonus_months": null,
+        "start_month": null
       }
     }
   ]
@@ -308,6 +355,8 @@ Side-by-side comparison of 2–3 cards. Use this for the comparison tool.
 - Cards are returned in the same order as the `slugs` param — safe to use for rendering columns.
 - `best_offer` is `null` if the card has no active offers.
 - `best_offer` is the single highest-value offer: highest `points_value` for points/hybrid cards, highest `cashback_value` for cashback cards.
+- `has_no_bonus: true` means the card is confirmed to have no welcome bonus — use this to show a "No welcome bonus" label instead of a blank offer slot.
+- `best_offer` includes all 6 monthly bonus fields (`is_monthly_bonus`, `monthly_points_value`, `monthly_spend_requirement`, `monthly_cashback_value`, `bonus_months`, `start_month`) — handle monthly offers the same way as in the card detail endpoint.
 
 ---
 
@@ -679,6 +728,29 @@ type CardTier     = 'no-fee' | 'entry' | 'mid' | 'premium' | 'super-premium'
 type RewardsType  = 'points' | 'cashback' | 'hybrid'
 type OfferType    = 'welcome_bonus' | 'limited_time' | 'retention' | 'referral'
 type CreditScore  = 'fair' | 'good' | 'very-good' | 'excellent'
+type ReviewStatus = 'pending_review' | 'approved' | 'rejected' | 'archived'
+
+interface CardOffer {
+  id: string
+  offer_type: OfferType
+  headline: string
+  points_value: number | null
+  cashback_value: number | null       // percentage, e.g. 2.0 = 2%
+  spend_requirement: number | null
+  spend_timeframe_days: number | null
+  is_limited_time: boolean
+  expires_at: string | null           // 'YYYY-MM-DD'
+  is_verified: boolean
+  source_priority: number             // 0=manual, 1=churningcanada, 2=princeoftravel, 4=mintflying
+  confidence_score: number            // 0–100
+  // Monthly bonus fields (null when is_monthly_bonus = false)
+  is_monthly_bonus: boolean
+  monthly_points_value: number | null
+  monthly_spend_requirement: number | null
+  monthly_cashback_value: number | null
+  bonus_months: number | null
+  start_month: number | null
+}
 ```
 
 ---

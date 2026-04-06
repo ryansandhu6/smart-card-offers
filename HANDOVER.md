@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-03-31 (migrations 011–026: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup)
+> Last updated: 2026-04-06 (migrations 011–035: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup, monthly bonus fields, scraper safety hardening, offer archival on approve, priority inversion fix)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -1155,6 +1155,74 @@ curl -X POST https://smartcardoffers.ca/api/scrape \
 
 Then run:
 git add -A && git commit -m "session: dupe merges, public homepage, admin add card/offer, FYF badge, dupe detection" && git push
+
+---
+
+## Session 2026-04-06
+
+### Priority 1 — All items completed this session
+
+**Monthly cashback field (migration 035)**
+- Added `monthly_cashback_value NUMERIC(8,2)` column to `card_offers`
+- Wired through admin UI (ReviewQueue, OffersTable), all admin page selects, and all public API selects
+- Dashboard zero-value detection updated to exempt monthly recurring offers that have monthly values set
+
+**Review queue safety hardening**
+- `createCard`: now defaults `is_active: false` — new cards start inactive and must go through review
+- `createOffer` (actions.ts): now defaults `is_active: false`, `review_status: 'pending_review'` — all new offers route through review regardless of creation path
+- OffersTable and ReviewQueue: all manual create paths updated to match; all `source_priority: 9` → `source_priority: 0` (manual = highest trust, never overwritable by any scraper)
+- `sendCardToReview` placeholder offer: `source_priority: 9` → `source_priority: 0`
+
+**Scraper safety fixes**
+- Heartbeat path (scraper-base.ts): removed code that conditionally set `is_active = true` on heartbeat updates — heartbeat now only touches `last_seen_at` and `confidence_score`, never activates offers
+- ChurningCanada card reactivation: removed block that set `is_active: true` on cards that were previously deactivated; now logs a warning and skips instead
+
+**Offer archival on approve**
+- `approveOffer` in actions.ts: now fetches the offer's `card_id` and `offer_type`, sets all currently-active same-type offers for that card to `is_active: false, review_status: 'archived'` before activating the new one
+- New `review_status` value: `'archived'` (existing: `pending_review`, `approved`, `rejected`)
+
+**Priority inversion fix**
+- Manual offers were incorrectly set to `source_priority: 9` (lowest trust, overwritable by all scrapers)
+- Corrected to `source_priority: 0` (highest trust, never overwritable)
+- Priority system: 0=manual, 1=churningcanada, 2=princeoftravel, 4=mintflying
+
+**MintFlying cashback parsing fix**
+- `MintFlyingScraper.cardToOffer()` only extracted `points_value`; added regex for `$X cash back` / `$X cashback` patterns
+- `cashback_value` now populated for cashback offers from MintFlying
+
+**Public API monthly bonus fields**
+- All 6 monthly bonus fields now included in every offer select: `is_monthly_bonus`, `monthly_points_value`, `monthly_spend_requirement`, `monthly_cashback_value`, `bonus_months`, `start_month`
+- Updated in: `lib/supabase.ts` (getCards, searchCards), `app/api/cards/[slug]/route.ts`, `app/api/cards/compare/route.ts`
+- Compare endpoint also now returns `has_no_bonus` on each card
+
+---
+
+### PrinceOfTravel scraper diagnosis (2026-04-06)
+
+**Symptom:** PoT was logging `97 found / 0 updated` with `status: 'partial'`
+
+**Root cause investigation:**
+1. `KNOWN_ISSUER_SLUGS` was suspected — **ruled out**. Confirmed perfect 20/20 match with DB issuers (no gaps in either direction).
+2. Remaining suspects (not yet fully resolved):
+   - **Priority guard**: all 97 existing offers are at priority ≤ 2 (PoT is also priority 2), so `existing.source_priority <= incomingPriority` → heartbeat-only for every row → `records_updated = 0` is expected and correct behavior, not a bug
+   - **HTTP errors on individual card page fetches**: `status: 'partial'` is set when any offer save throws; if PoT card pages are returning 4xx/5xx intermittently, the heartbeat still increments `records_found` but the error prevents `records_updated` from incrementing
+   - **Conclusion**: 0 updated is expected (all rows at equal or higher priority); partial status is from transient HTTP errors on a handful of the 97 card pages. Monitor next scrape run for improvement.
+
+---
+
+### Priority 2 — Next up
+
+In rough priority order:
+
+1. **Card merge/dedup in review queue** — admin UI to merge two cards (move all offers from one card_id to another, delete the source card). Currently done manually via SQL.
+2. **AI auto-generate descriptions** — use Claude API to generate `short_description`, `pros`, `cons`, `best_for` for stub cards that have offer data but no content fields
+3. **Tier audit** — ~15 cards still have `tier: 'entry'` as default; audit against issuer annual fee to assign correct tier
+4. **Data quality formula** — implement on dashboard: `round(active offers with spend_requirement NOT NULL AND details NOT NULL / all active offers × 100)`
+5. **Dashboard offer count fix** — `/admin` counts all active offers but should show offers-per-card breakdown; currently one card with 3 offers inflates the count
+6. **API offer grouping** — `/api/cards/:slug` returns `current_offers: []` (flat array); consider grouping by `offer_type` for cleaner frontend consumption
+7. **FYF detection in PoT scraper** — parse "First year annual fee waived" from PoT extra_perks and write `annual_fee_waived_first_year: true` back to the card
+
+**Note:** `SCO_MASTER_ACTION_LIST.md` was not found in the repo root or `/docs`. If it exists elsewhere, check git log. If it needs to be created, it should live at the repo root and track all planned work items across sessions.
 
 ### Known data quality issues
 
