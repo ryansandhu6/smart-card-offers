@@ -214,12 +214,16 @@ export abstract class BaseScraper {
 
       // ── Step 2: find or create card ───────────────────────────────────────
       if (issuer) {
-        const { data: card } = await supabaseAdmin
+        // Use .limit(1) instead of .maybeSingle() — ilike can match multiple rows
+        // (e.g. "Visa Infinite" hits several TD cards) and maybeSingle() throws PGRST116
+        // on multiple results, making the entire saveOffer call count as a partial error.
+        const { data: cardMatches } = await supabaseAdmin
           .from('credit_cards')
           .select('id')
           .eq('issuer_id', issuer.id)
           .ilike('name', `%${offer.card_name}%`)
-          .maybeSingle()
+          .limit(1)
+        const card = cardMatches?.[0] ?? null
 
         if (card) {
           card_id = card.id
@@ -288,22 +292,38 @@ export abstract class BaseScraper {
     // Check if an offer with the same natural key already exists
     const { data: existing } = await supabaseAdmin
       .from('card_offers')
-      .select('id, source_priority, review_status')
+      .select('id, source_priority, review_status, points_value, cashback_value, spend_requirement')
       .eq('card_id', card_id)
       .eq('offer_type', offer.offer_type)
       .eq('headline', offer.headline)
       .maybeSingle()
 
     if (existing) {
-      // Priority guard: lower number = higher trust.
-      // If the stored row is already from an equal-or-higher-trust source
-      // (existing.source_priority ≤ incomingPriority), never overwrite the offer
-      // content — only refresh the heartbeat so the offer stays active.
-      // Counted as `records_skipped` in scrape_logs.
-      if ((existing.source_priority ?? 99) <= incomingPriority) {
+      const existingPriority = existing.source_priority ?? 99
+
+      // Determine whether to heartbeat-only or do a full overwrite.
+      //
+      //   priority 0 (manual)  → always heartbeat — manual offers are sacred
+      //   existing < incoming  → heartbeat — existing is from a more-trusted source
+      //   existing === incoming → compare values: heartbeat if unchanged, overwrite if changed
+      //   existing > incoming  → overwrite — incoming is from a more-trusted source
+      let shouldSkip: boolean
+      if (existingPriority === 0) {
+        shouldSkip = true
+      } else if (existingPriority < incomingPriority) {
+        shouldSkip = true
+      } else if (existingPriority === incomingPriority) {
+        // Same source re-scraping its own offer — only overwrite if something changed
+        const samePoints = (existing.points_value ?? null) === (offer.points_value ?? null)
+        const sameCash   = Number(existing.cashback_value ?? 0) === Number(offer.cashback_value ?? 0)
+        const sameSpend  = (existing.spend_requirement ?? null) === (offer.spend_requirement ?? null)
+        shouldSkip = samePoints && sameCash && sameSpend
+      } else {
+        shouldSkip = false  // incoming is from a strictly more-trusted source
+      }
+
+      if (shouldSkip) {
         // Heartbeat refresh only — do NOT log to offer_history (no content change).
-        // Only re-activate offers that are already approved; leave pending_review
-        // and rejected rows in their current state so admin review is respected.
         const heartbeat: Record<string, unknown> = { last_seen_at: now, confidence_score: confidence }
         const { error } = await supabaseAdmin
           .from('card_offers')
