@@ -305,7 +305,6 @@ export abstract class BaseScraper {
         // Only re-activate offers that are already approved; leave pending_review
         // and rejected rows in their current state so admin review is respected.
         const heartbeat: Record<string, unknown> = { last_seen_at: now, confidence_score: confidence }
-        if ((existing as any).review_status !== 'pending_review') heartbeat.is_active = true
         const { error } = await supabaseAdmin
           .from('card_offers')
           .update(heartbeat)

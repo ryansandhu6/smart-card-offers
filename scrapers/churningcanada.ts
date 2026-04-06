@@ -229,11 +229,7 @@ export class ChurningCanadaScraper extends BaseScraper {
         .maybeSingle()
       if (data) {
         if (!data.is_active) {
-          await supabaseAdmin
-            .from('credit_cards')
-            .update({ is_active: true })
-            .eq('id', data.id)
-          console.log(`[${SCRAPER_NAME}] reactivated card "${targetSlug}" (found in churning README)`)
+          console.log(`[${SCRAPER_NAME}] card "${targetSlug}" is inactive, skipping reactivation`)
         }
         return data.id
       }
