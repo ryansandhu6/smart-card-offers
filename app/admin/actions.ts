@@ -170,17 +170,18 @@ export async function createOffer(data: {
   monthly_cashback_value?: number | null
   bonus_months?: number | null
   source_name: string
-  source_priority: number
+  source_priority?: number
   is_limited_time: boolean
   expires_at: string | null
   is_active?: boolean
   review_status?: string
 }) {
-  const { is_active, review_status, ...rest } = data
+  const { is_active, review_status, source_priority = 0, ...rest } = data
   const { error } = await supabaseAdmin
     .from('card_offers')
     .insert({
       ...rest,
+      source_priority,
       is_active: is_active ?? false,
       review_status: review_status ?? 'pending_review',
       scraped_at: new Date().toISOString(),
@@ -257,7 +258,7 @@ export async function sendCardToReview(cardId: string): Promise<{ success: boole
         is_limited_time: false,
         review_status: 'pending_review',
         source_name: 'manual',
-        source_priority: 9,
+        source_priority: 0,
         is_verified: false,
         is_better_than_usual: false,
         scraped_at: new Date().toISOString(),

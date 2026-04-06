@@ -8,7 +8,7 @@ const SOURCE_PRIORITY: Record<string, number> = {
   churningcanada:  1,
   princeoftravel:  2,
   mintflying:      4,
-  manual:          9,
+  manual:          0,
 }
 
 type Offer = {
@@ -94,14 +94,14 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
     grouped.get(key)!.offers.push(o)
   }
   for (const g of grouped.values()) {
-    g.offers.sort((a, b) => (TYPE_ORDER[a.offer_type] ?? 9) - (TYPE_ORDER[b.offer_type] ?? 9))
+    g.offers.sort((a, b) => (TYPE_ORDER[a.offer_type] ?? 0) - (TYPE_ORDER[b.offer_type] ?? 0))
   }
 
   const cardRows: CardRow[] = [...grouped.entries()].map(([slug, g]) => {
     const welcome     = g.offers.find(o => o.offer_type === 'welcome_bonus') ?? null
     const additionals = g.offers.filter(o => o.offer_type === 'additional_offer')
     const allOffers   = [welcome, ...additionals].filter((o): o is Offer => o !== null)
-    const priorities  = allOffers.map(o => o.source_priority ?? 9)
+    const priorities  = allOffers.map(o => o.source_priority ?? 0)
     const sourcePriority = priorities.length > 0 ? Math.min(...priorities) : null
     const isLtd = allOffers.some(o => o.is_limited_time)
     const cashbacks = allOffers.map(o => o.cashback_value).filter((v): v is number => v != null)
@@ -392,7 +392,7 @@ function CardEditPanel({
             monthly_spend_requirement: wIsMonthly && wMonthlySpend ? Number(wMonthlySpend) : null,
             bonus_months: wIsMonthly && wBonusMonths ? Number(wBonusMonths) : null,
             source_name: 'manual',
-            source_priority: 9,
+            source_priority: 0,
             is_limited_time: wLtd,
             expires_at: wExpires || null,
             is_active: false,
@@ -437,7 +437,7 @@ function CardEditPanel({
               monthly_spend_requirement: draft.isMonthly && draft.monthlySpend ? Number(draft.monthlySpend) : null,
               bonus_months: draft.isMonthly && draft.bonusMonths ? Number(draft.bonusMonths) : null,
               source_name: 'manual',
-              source_priority: 9,
+              source_priority: 0,
               is_limited_time: draft.ltd,
               expires_at: draft.expires || null,
               is_active: false,
@@ -709,7 +709,7 @@ function AddOfferForm({
       cashback_value:   cashback_value   ? Number(cashback_value)   : null,
       spend_requirement: spend_requirement ? Number(spend_requirement) : null,
       source_name,
-      source_priority: SOURCE_PRIORITY[source_name] ?? 9,
+      source_priority: SOURCE_PRIORITY[source_name] ?? 0,
       is_limited_time,
       expires_at: expires_at || null,
     })
@@ -761,7 +761,7 @@ function AddOfferForm({
           </select>
         </div>
         <div className="flex items-end">
-          <p className="text-xs text-gray-400">priority → {SOURCE_PRIORITY[source_name] ?? 9}</p>
+          <p className="text-xs text-gray-400">priority → {SOURCE_PRIORITY[source_name] ?? 0}</p>
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
