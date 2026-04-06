@@ -24,7 +24,30 @@ export async function GET(req: NextRequest) {
       return { ...o, is_better_than_usual }
     })
 
-    return NextResponse.json({ offers: enriched, count: enriched.length, total, page, limit })
+    // Group by card — one object per card with welcome_bonus + additional_offers nested.
+    // Offer ordering from getActiveOffers (source_priority ASC, points DESC) is preserved,
+    // so the first welcome_bonus seen per card is always the highest-trust one.
+    const cardMap = new Map<string, any>()
+    for (const offer of enriched) {
+      const { card, card_id, ...offerData } = offer
+      if (!cardMap.has(card_id)) {
+        cardMap.set(card_id, {
+          ...card,
+          has_no_bonus: card.has_no_bonus ?? false,
+          welcome_bonus: null,
+          additional_offers: [],
+        })
+      }
+      const entry = cardMap.get(card_id)!
+      if (offer.offer_type === 'welcome_bonus' && !entry.welcome_bonus) {
+        entry.welcome_bonus = { ...offerData, card_id }
+      } else if (offer.offer_type !== 'welcome_bonus') {
+        entry.additional_offers.push({ ...offerData, card_id })
+      }
+    }
+
+    const cards = [...cardMap.values()]
+    return NextResponse.json({ cards, count: cards.length, total, page, limit })
   } catch (err) {
     console.error('/api/offers error:', err)
     return NextResponse.json({ error: 'Failed to fetch offers' }, { status: 500 })

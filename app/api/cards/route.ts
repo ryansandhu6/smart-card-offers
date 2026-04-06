@@ -2,6 +2,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCards, searchCards } from '@/lib/supabase'
 
+/** Group a card's flat current_offers array into typed sub-fields. */
+function groupCardOffers(card: any) {
+  const offers: any[] = card.current_offers ?? []
+  const welcome_bonus    = offers.find(o => o.offer_type === 'welcome_bonus') ?? null
+  const additional_offers = offers.filter(o => o.offer_type !== 'welcome_bonus')
+  const { current_offers, ...rest } = card
+  return { ...rest, welcome_bonus, additional_offers }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
 
@@ -19,11 +28,13 @@ export async function GET(req: NextRequest) {
 
   try {
     if (q) {
-      const { data: cards, total } = await searchCards(q, filters)
+      const { data: raw, total } = await searchCards(q, filters)
+      const cards = raw.map(groupCardOffers)
       return NextResponse.json({ cards, count: cards.length, total, query: q })
     }
 
-    const { data: cards, total } = await getCards(filters)
+    const { data: raw, total } = await getCards(filters)
+    const cards = raw.map(groupCardOffers)
     return NextResponse.json({ cards, count: cards.length, total })
   } catch (err) {
     console.error('/api/cards error:', err)
