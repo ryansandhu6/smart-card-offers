@@ -1,9 +1,9 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer, setCardNoBonus } from '../actions'
+import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer, setCardNoBonus, mergeCard } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
-import type { CardGroup, OfferRow } from './page'
+import type { CardGroup, OfferRow, ActiveCardOption } from './page'
 
 const TIERS = ['no-fee', 'entry', 'mid', 'premium', 'super-premium'] as const
 
@@ -25,23 +25,43 @@ type ReviewAdditionalDraft = {
   bonusMonths: string
 }
 
-export default function ReviewQueue({ groups }: { groups: CardGroup[] }) {
+export default function ReviewQueue({ groups, allCards }: { groups: CardGroup[], allCards: ActiveCardOption[] }) {
   return (
     <div className="space-y-6">
       {groups.map(g => (
-        <CardSection key={g.card_id} group={g} />
+        <CardSection key={g.card_id} group={g} allCards={allCards} />
       ))}
     </div>
   )
 }
 
-function CardSection({ group }: { group: CardGroup }) {
+function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCardOption[] }) {
   const [showEdit,       setShowEdit]       = useState(false)
   const [showEditOffers, setShowEditOffers] = useState(false)
+  const [showMerge,      setShowMerge]      = useState(false)
+  const [mergeTargetId,  setMergeTargetId]  = useState('')
+  const [mergeErr,       setMergeErr]       = useState<string | null>(null)
   const [isPending,      startTrans]        = useTransition()
   const [saveErr,        setSaveErr]        = useState<string | null>(null)
   const [savedOk,        setSavedOk]        = useState(false)
   const router = useRouter()
+
+  const otherCards = allCards.filter(c => c.id !== group.card_id)
+
+  function handleMerge() {
+    if (!mergeTargetId) return
+    const target = otherCards.find(c => c.id === mergeTargetId)
+    if (!window.confirm(`Move all offers from "${group.card_name}" to "${target?.name}" and delete this card?`)) return
+    setMergeErr(null)
+    startTrans(async () => {
+      try {
+        await mergeCard(group.card_id, mergeTargetId)
+        router.refresh()
+      } catch (e) {
+        setMergeErr(e instanceof Error ? e.message : 'Merge failed')
+      }
+    })
+  }
 
   // Card edit state
   const [cardName,    setCardName]    = useState(group.card_name)
@@ -139,12 +159,48 @@ function CardSection({ group }: { group: CardGroup }) {
           Delete Card
         </button>
         <button
+          onClick={() => { setShowMerge(v => !v); setMergeErr(null) }}
+          className="text-xs text-orange-600 hover:underline"
+        >
+          {showMerge ? 'Cancel merge ▴' : 'Link to card ▾'}
+        </button>
+        <button
           onClick={() => { setShowEdit(v => !v); setSavedOk(false); setSaveErr(null) }}
           className="text-xs text-blue-600 hover:underline"
         >
           {showEdit ? 'Hide ▴' : 'Edit Card Details ▾'}
         </button>
       </div>
+
+      {/* Merge panel */}
+      {showMerge && (
+        <div className="px-5 py-4 bg-orange-50 border-b space-y-2">
+          <p className="text-xs text-orange-700 font-medium">
+            Move all offers from this card to an existing card, then delete this card.
+            Duplicate offer headlines will be dropped.
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <select
+              value={mergeTargetId}
+              onChange={e => setMergeTargetId(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+            >
+              <option value="">— select target card —</option>
+              {otherCards.map(c => (
+                <option key={c.id} value={c.id}>{c.name} ({c.slug})</option>
+              ))}
+            </select>
+            <button
+              onClick={handleMerge}
+              disabled={isPending || !mergeTargetId}
+              className="text-sm bg-orange-600 text-white px-3 py-1.5 rounded hover:bg-orange-700 disabled:opacity-40"
+            >
+              {isPending ? 'Merging…' : 'Merge & delete this card'}
+            </button>
+            {mergeErr && <span className="text-xs text-red-600">{mergeErr}</span>}
+          </div>
+        </div>
+      )}
 
       {/* Collapsible card edit panel */}
       {showEdit && (

@@ -125,6 +125,37 @@ export async function deleteCard(id: string) {
   revalidatePath('/admin')
 }
 
+export async function mergeCard(stubCardId: string, targetCardId: string) {
+  // Find conflicts: offers that already exist on the target with same (offer_type, headline)
+  const [{ data: stubOffers, error: e1 }, { data: targetOffers, error: e2 }] = await Promise.all([
+    supabaseAdmin.from('card_offers').select('id, offer_type, headline').eq('card_id', stubCardId),
+    supabaseAdmin.from('card_offers').select('offer_type, headline').eq('card_id', targetCardId),
+  ])
+  if (e1) throw new Error(e1.message)
+  if (e2) throw new Error(e2.message)
+
+  const targetKeys = new Set((targetOffers ?? []).map(o => `${o.offer_type}:${o.headline}`))
+  const toMove = (stubOffers ?? []).filter(o => !targetKeys.has(`${o.offer_type}:${o.headline}`))
+  const toDrop = (stubOffers ?? []).filter(o =>  targetKeys.has(`${o.offer_type}:${o.headline}`))
+
+  if (toDrop.length > 0) {
+    const { error } = await supabaseAdmin.from('card_offers').delete().in('id', toDrop.map(o => o.id))
+    if (error) throw new Error(error.message)
+  }
+  if (toMove.length > 0) {
+    const { error } = await supabaseAdmin.from('card_offers').update({ card_id: targetCardId }).in('id', toMove.map(o => o.id))
+    if (error) throw new Error(error.message)
+  }
+
+  const { error: deleteErr } = await supabaseAdmin.from('credit_cards').delete().eq('id', stubCardId)
+  if (deleteErr) throw new Error(deleteErr.message)
+
+  revalidatePath('/admin/review')
+  revalidatePath('/admin/cards')
+  revalidatePath('/admin/offers')
+  revalidatePath('/admin')
+}
+
 export async function cleanupOrphanedOffers(): Promise<{ deleted: number }> {
   const { data: validCards, error: fetchError } = await supabaseAdmin
     .from('credit_cards')
