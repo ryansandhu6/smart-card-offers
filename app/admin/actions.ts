@@ -65,6 +65,9 @@ export async function updateCard(
     short_description: string | null
     referral_url: string | null
     image_url: string | null
+    foreign_transaction_fee?: number | null
+    min_income?: number | null
+    minimum_household_income?: number | null
     has_no_bonus?: boolean
   }
 ) {

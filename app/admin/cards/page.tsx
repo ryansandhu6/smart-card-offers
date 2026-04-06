@@ -7,7 +7,7 @@ export default async function CardsPage() {
   const [{ data: cards, error }, { data: issuers }] = await Promise.all([
     supabaseAdmin
       .from('credit_cards')
-      .select('id, name, slug, tier, is_active, rewards_type, short_description, referral_url, image_url, annual_fee, annual_fee_waived_first_year, issuer:issuers(name)')
+      .select('id, name, slug, tier, is_active, rewards_type, short_description, referral_url, image_url, annual_fee, annual_fee_waived_first_year, foreign_transaction_fee, min_income, minimum_household_income, issuer:issuers(name)')
       .order('name'),
     supabaseAdmin
       .from('issuers')
@@ -22,7 +22,11 @@ export default async function CardsPage() {
     is_active: boolean; rewards_type: string
     annual_fee: number; annual_fee_waived_first_year: boolean
     short_description: string | null; referral_url: string | null
-    image_url: string | null; issuer: { name: string } | null
+    image_url: string | null
+    foreign_transaction_fee: number | null
+    min_income: number | null
+    minimum_household_income: number | null
+    issuer: { name: string } | null
   }
   const rows = (cards ?? []).map(c => ({
     ...c,

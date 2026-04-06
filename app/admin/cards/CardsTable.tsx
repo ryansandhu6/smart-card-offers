@@ -20,6 +20,9 @@ type Card = {
   short_description: string | null
   referral_url: string | null
   image_url: string | null
+  foreign_transaction_fee: number | null
+  min_income: number | null
+  minimum_household_income: number | null
   issuer: { name: string } | null
 }
 
@@ -41,7 +44,7 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
       )
     : cards
 
-  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) {
+  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; foreign_transaction_fee: number | null; min_income: number | null; minimum_household_income: number | null }) {
     setError(null)
     startTrans(async () => {
       try {
@@ -327,7 +330,7 @@ function EditRow({
 }: {
   card: Card
   isPending: boolean
-  onSave: (draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null }) => void
+  onSave: (draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; foreign_transaction_fee: number | null; min_income: number | null; minimum_household_income: number | null }) => void
   onCancel: () => void
 }) {
   const [name, setName]                                       = useState(card.name)
@@ -338,6 +341,9 @@ function EditRow({
   const [short_description, setShortDesc]                     = useState(card.short_description ?? '')
   const [referral_url, setReferralUrl]                        = useState(card.referral_url ?? '')
   const [image_url, setImageUrl]                              = useState(card.image_url ?? '')
+  const [fx_fee, setFxFee]                                    = useState(card.foreign_transaction_fee?.toString() ?? '')
+  const [min_income, setMinIncome]                            = useState(card.min_income?.toString() ?? '')
+  const [min_household, setMinHousehold]                      = useState(card.minimum_household_income?.toString() ?? '')
 
   return (
     <>
@@ -379,6 +385,9 @@ function EditRow({
               short_description: short_description.trim() || null,
               referral_url: referral_url.trim() || null,
               image_url: image_url.trim() || null,
+              foreign_transaction_fee: fx_fee !== '' ? Number(fx_fee) : null,
+              min_income: min_income !== '' ? Number(min_income) : null,
+              minimum_household_income: min_household !== '' ? Number(min_household) : null,
             })}
             disabled={isPending}
             className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 disabled:opacity-40"
@@ -446,6 +455,46 @@ function EditRow({
               />
               Annual fee waived first year (FYF)
             </label>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">
+                Foreign Transaction Fee (%)
+                <span className="text-gray-400 ml-1">— blank = unknown, 0 = no fee</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="10"
+                value={fx_fee}
+                onChange={e => setFxFee(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+                placeholder="e.g. 2.5"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Min. Personal Income ($)</label>
+              <input
+                type="number"
+                step="1000"
+                value={min_income}
+                onChange={e => setMinIncome(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+                placeholder="e.g. 60000"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Min. Household Income ($)</label>
+              <input
+                type="number"
+                step="1000"
+                value={min_household}
+                onChange={e => setMinHousehold(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+                placeholder="e.g. 80000"
+              />
+            </div>
           </div>
         </td>
       </tr>
