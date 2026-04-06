@@ -262,6 +262,12 @@ export class MintFlyingScraper extends BaseScraper {
     // value (e.g. 900 = $900), not a raw points count. Always parse from headline.
     const points_value: number | undefined = this.parsePoints(headline)
 
+    // Parse cashback dollar amounts: "$250 cash back", "$200 cashback", etc.
+    const cashbackMatch = headline.match(/\$([\d,]+)(?:\s*cash\s*back|\s*cashback)/i)
+    const cashback_value: number | undefined = cashbackMatch
+      ? parseFloat(cashbackMatch[1].replace(/,/g, ''))
+      : undefined
+
     const periodDays = this.parsePeriod(String(card.minSpendPeriod ?? ''))
     const spendFromText = this.parseSpend(headline)
     const spend_requirement: number | undefined =
@@ -280,6 +286,7 @@ export class MintFlyingScraper extends BaseScraper {
       offer_type: 'welcome_bonus',
       headline: headline.slice(0, 250),
       points_value,
+      cashback_value,
       spend_requirement,
       spend_timeframe_days,
       is_limited_time: !!expires_at,
