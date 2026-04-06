@@ -278,6 +278,25 @@ export async function sendCardToReview(cardId: string): Promise<{ success: boole
 }
 
 export async function approveOffer(id: string) {
+  // Fetch the offer being approved so we know its card_id and offer_type
+  const { data: offer, error: fetchError } = await supabaseAdmin
+    .from('card_offers')
+    .select('card_id, offer_type')
+    .eq('id', id)
+    .single()
+  if (fetchError) throw new Error(fetchError.message)
+
+  // Archive any currently active offers of the same type for this card
+  const { error: archiveError } = await supabaseAdmin
+    .from('card_offers')
+    .update({ is_active: false, review_status: 'archived' })
+    .eq('card_id', offer.card_id)
+    .eq('offer_type', offer.offer_type)
+    .eq('is_active', true)
+    .neq('id', id)
+  if (archiveError) throw new Error(archiveError.message)
+
+  // Activate the new offer
   const { error } = await supabaseAdmin
     .from('card_offers')
     .update({ is_active: true, review_status: 'approved' })
