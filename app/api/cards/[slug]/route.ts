@@ -23,7 +23,9 @@ export async function GET(
           spend_requirement, spend_timeframe_days,
           extra_perks, is_limited_time, expires_at,
           is_verified, source_priority, last_seen_at,
-          confidence_score, source_url, scraped_at
+          confidence_score, source_url, scraped_at,
+          is_monthly_bonus, monthly_points_value, monthly_spend_requirement,
+          monthly_cashback_value, bonus_months, start_month
         )
       `)
       .eq('slug', slug)

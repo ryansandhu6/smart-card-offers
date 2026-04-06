@@ -24,11 +24,13 @@ export async function GET(req: NextRequest) {
       .select(`
         id, name, slug, image_url, referral_url, annual_fee,
         rewards_type, rewards_program, earn_rate_base, earn_rate_multipliers,
-        lounge_access, travel_insurance, tier,
+        lounge_access, travel_insurance, tier, has_no_bonus,
         issuer:issuers(name, slug),
         offers:card_offers(
           offer_type, headline, points_value, cashback_value,
-          spend_requirement, spend_timeframe_days, is_limited_time, is_active
+          spend_requirement, spend_timeframe_days, is_limited_time, is_active,
+          is_monthly_bonus, monthly_points_value, monthly_spend_requirement,
+          monthly_cashback_value, bonus_months, start_month
         )
       `)
       .in('slug', slugs)

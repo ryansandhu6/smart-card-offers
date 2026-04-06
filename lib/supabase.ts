@@ -56,7 +56,9 @@ export async function getCards(filters?: {
         id, offer_type, headline, points_value, cashback_value,
         spend_requirement, spend_timeframe_days, extra_perks,
         is_limited_time, expires_at, is_verified,
-        source_priority, last_seen_at, confidence_score
+        source_priority, last_seen_at, confidence_score,
+        is_monthly_bonus, monthly_points_value, monthly_spend_requirement,
+        monthly_cashback_value, bonus_months, start_month
       )
     `, { count: 'exact' })
     .eq('is_active', true)
@@ -120,7 +122,9 @@ export async function searchCards(
         id, offer_type, headline, points_value, cashback_value,
         spend_requirement, spend_timeframe_days, extra_perks,
         is_limited_time, expires_at, is_verified,
-        source_priority, last_seen_at, confidence_score
+        source_priority, last_seen_at, confidence_score,
+        is_monthly_bonus, monthly_points_value, monthly_spend_requirement,
+        monthly_cashback_value, bonus_months, start_month
       )
     `)
     .in('id', ids)
