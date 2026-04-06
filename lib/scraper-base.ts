@@ -503,7 +503,7 @@ export abstract class BaseScraper {
           rewards_type: inferRewardsType(cardName),
           apply_url: offer.apply_url,
           image_url: offer.image_url ?? null,
-          is_active: true,
+          is_active: false,
           is_featured: false,
         },
         { onConflict: 'slug' }

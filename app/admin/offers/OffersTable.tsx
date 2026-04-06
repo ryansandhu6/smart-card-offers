@@ -395,8 +395,8 @@ function CardEditPanel({
             source_priority: 9,
             is_limited_time: wLtd,
             expires_at: wExpires || null,
-            is_active: true,
-            review_status: 'approved',
+            is_active: false,
+            review_status: 'pending_review',
           })
         }
 
@@ -440,8 +440,8 @@ function CardEditPanel({
               source_priority: 9,
               is_limited_time: draft.ltd,
               expires_at: draft.expires || null,
-              is_active: true,
-              review_status: 'approved',
+              is_active: false,
+              review_status: 'pending_review',
             })
           }
         }

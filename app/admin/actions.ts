@@ -43,7 +43,7 @@ export async function createCard(data: {
       rewards_type: data.rewards_type,
       referral_url: data.referral_url,
       image_url: data.image_url,
-      is_active: true,
+      is_active: false,
       is_featured: false,
       annual_fee: 0,
       lounge_access: false,
@@ -181,8 +181,8 @@ export async function createOffer(data: {
     .from('card_offers')
     .insert({
       ...rest,
-      is_active: is_active ?? true,
-      review_status: review_status ?? 'approved',
+      is_active: is_active ?? false,
+      review_status: review_status ?? 'pending_review',
       scraped_at: new Date().toISOString(),
       is_verified: false,
       is_better_than_usual: false,
