@@ -190,6 +190,7 @@ export abstract class BaseScraper {
     // Fast path: caller pre-resolved the card ID (e.g. ChurningCanadaScraper).
     // Skip DB lookup and card creation entirely.
     let card_id: string
+    let isNewCard = false
 
     if (offer._card_id) {
       card_id = offer._card_id
@@ -258,10 +259,14 @@ export abstract class BaseScraper {
               .eq('id', card_id).eq('annual_fee', 0)
           }
         } else {
-          card_id = await this.ensureCard(offer)
+          const ensured = await this.ensureCard(offer)
+          card_id = ensured.id
+          isNewCard = ensured.isNew
         }
       } else {
-        card_id = await this.ensureCard(offer)
+        const ensured = await this.ensureCard(offer)
+        card_id = ensured.id
+        isNewCard = ensured.isNew
       }
     }
 
@@ -375,6 +380,19 @@ export abstract class BaseScraper {
         // Incoming source has strictly higher trust (lower number) — full overwrite.
         // Also update headline: for welcome_bonus the existing row may have a different
         // headline from a prior scrape (headline is not part of the lookup key).
+        let review_reason: string
+        if (existingPriority > incomingPriority) {
+          review_reason = 'lower_priority_source'
+        } else {
+          // Same priority, something changed
+          const incomingPoints = offer.points_value ?? 0
+          const incomingCash   = offer.cashback_value ?? 0
+          const existingPoints = existing.points_value ?? 0
+          const existingCash   = Number(existing.cashback_value ?? 0)
+          review_reason = (incomingPoints > existingPoints || incomingCash > existingCash)
+            ? 'higher_bonus'
+            : 'updated_terms'
+        }
         const { error } = await supabaseAdmin
           .from('card_offers')
           .update({
@@ -396,6 +414,7 @@ export abstract class BaseScraper {
             confidence_score: confidence,
             is_active: false,
             review_status: 'pending_review',
+            review_reason,
           })
           .eq('id', existing.id)
         if (error) throw new Error(`offer overwrite failed: ${error.message}`)
@@ -404,6 +423,7 @@ export abstract class BaseScraper {
       }
     } else {
       // New offer — insert
+      const review_reason = isNewCard ? 'new_card' : 'new_offer'
       const { error } = await supabaseAdmin
         .from('card_offers')
         .insert({
@@ -427,6 +447,7 @@ export abstract class BaseScraper {
           confidence_score: confidence,
           is_active: false,
           review_status: 'pending_review',
+          review_reason,
         })
       if (error) throw new Error(`offer insert failed: ${error.message}`)
       await logOfferHistory({ card_id, offer_type: offer.offer_type, headline: offer.headline, points_value: offer.points_value, cashback_value: offer.cashback_value, spend_requirement: offer.spend_requirement, spend_timeframe_days: offer.spend_timeframe_days, source_priority: incomingPriority })
@@ -467,7 +488,7 @@ export abstract class BaseScraper {
     }
   }
 
-  protected async ensureCard(offer: ScrapedOffer): Promise<string> {
+  protected async ensureCard(offer: ScrapedOffer): Promise<{ id: string; isNew: boolean }> {
     // Get issuer id
     const { data: issuer } = await supabaseAdmin
       .from('issuers')
@@ -496,7 +517,7 @@ export abstract class BaseScraper {
       if (bySlug.name !== cardName) {
         console.warn(`[${this.name}] Slug collision: "${cardName}" matches existing "${bySlug.name}" (slug=${slug}), reusing id`)
       }
-      return bySlug.id
+      return { id: bySlug.id, isNew: false }
     }
 
     // 2. Keyword search — strip special chars, take first 3 meaningful words
@@ -518,7 +539,7 @@ export abstract class BaseScraper {
         .eq('issuer_id', issuer.id)
         .ilike('name', `%${kw}%`)
         .limit(1)
-      if (matches?.length) return matches[0].id
+      if (matches?.length) return { id: matches[0].id, isNew: false }
     }
 
     // ── Near-dupe warning ──────────────────────────────────────────────────────
@@ -574,7 +595,7 @@ export abstract class BaseScraper {
       .single()
 
     if (error) throw error
-    return data.id
+    return { id: data.id, isNew: true }
   }
 
   protected fetchWithTimeout(

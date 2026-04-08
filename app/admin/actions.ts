@@ -350,3 +350,75 @@ export async function rejectOffer(id: string) {
   revalidatePath('/admin/review')
   revalidatePath('/admin')
 }
+
+export async function getCardActiveOffers(cardId: string): Promise<{
+  id: string
+  offer_type: string
+  headline: string
+  points_value: number | null
+  cashback_value: number | null
+}[]> {
+  const { data, error } = await supabaseAdmin
+    .from('card_offers')
+    .select('id, offer_type, headline, points_value, cashback_value')
+    .eq('card_id', cardId)
+    .eq('is_active', true)
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+export async function mergeCardWithOfferSelection(
+  stubId: string,
+  targetId: string,
+  keepOfferIds: string[]
+) {
+  // 1. Find stub offers and check for headline conflicts on target
+  const [{ data: stubOffers, error: e1 }, { data: targetOffers, error: e2 }] = await Promise.all([
+    supabaseAdmin.from('card_offers').select('id, offer_type, headline').eq('card_id', stubId),
+    supabaseAdmin.from('card_offers').select('offer_type, headline').eq('card_id', targetId),
+  ])
+  if (e1) throw new Error(e1.message)
+  if (e2) throw new Error(e2.message)
+
+  const targetKeys = new Set((targetOffers ?? []).map(o => `${o.offer_type}:${o.headline}`))
+  const toMove = (stubOffers ?? []).filter(o => !targetKeys.has(`${o.offer_type}:${o.headline}`))
+  const toDrop = (stubOffers ?? []).filter(o =>  targetKeys.has(`${o.offer_type}:${o.headline}`))
+
+  // 2. Drop stub offers whose headline already exists on target
+  if (toDrop.length > 0) {
+    const { error } = await supabaseAdmin.from('card_offers').delete().in('id', toDrop.map(o => o.id))
+    if (error) throw new Error(error.message)
+  }
+
+  // 3. Move remaining stub offers to target card
+  if (toMove.length > 0) {
+    const { error } = await supabaseAdmin.from('card_offers').update({ card_id: targetId }).in('id', toMove.map(o => o.id))
+    if (error) throw new Error(error.message)
+  }
+
+  // 4. Archive all currently active offers on target
+  const { error: archiveError } = await supabaseAdmin
+    .from('card_offers')
+    .update({ is_active: false, review_status: 'archived' })
+    .eq('card_id', targetId)
+    .eq('is_active', true)
+  if (archiveError) throw new Error(archiveError.message)
+
+  // 5. Activate only the admin-selected offers
+  if (keepOfferIds.length > 0) {
+    const { error } = await supabaseAdmin
+      .from('card_offers')
+      .update({ is_active: true, review_status: 'approved' })
+      .in('id', keepOfferIds)
+    if (error) throw new Error(error.message)
+  }
+
+  // 6. Delete stub card
+  const { error: deleteErr } = await supabaseAdmin.from('credit_cards').delete().eq('id', stubId)
+  if (deleteErr) throw new Error(deleteErr.message)
+
+  revalidatePath('/admin/review')
+  revalidatePath('/admin/cards')
+  revalidatePath('/admin/offers')
+  revalidatePath('/admin')
+}

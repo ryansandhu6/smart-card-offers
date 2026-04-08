@@ -25,6 +25,7 @@ export type OfferRow = {
   monthly_cashback_value: number | null
   bonus_months: number | null
   start_month: number | null
+  review_reason: string | null
 }
 
 export type ActiveCardOption = { id: string; name: string; slug: string }
@@ -52,7 +53,7 @@ export default async function ReviewPage() {
   // Fetch all pending offers with card info
   const { data: pendingRaw, error: e1 } = await supabaseAdmin
     .from('card_offers')
-    .select('id, card_id, headline, points_value, cashback_value, spend_requirement, spend_timeframe_days, start_month, is_monthly_bonus, monthly_points_value, monthly_spend_requirement, monthly_cashback_value, bonus_months, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, is_active, scraped_at, credit_cards!inner(name, slug)')
+    .select('id, card_id, headline, points_value, cashback_value, spend_requirement, spend_timeframe_days, start_month, is_monthly_bonus, monthly_points_value, monthly_spend_requirement, monthly_cashback_value, bonus_months, offer_type, is_limited_time, expires_at, source_priority, source_name, review_status, review_reason, is_active, scraped_at, credit_cards!inner(name, slug)')
     .eq('review_status', 'pending_review')
     .order('scraped_at', { ascending: false })
 

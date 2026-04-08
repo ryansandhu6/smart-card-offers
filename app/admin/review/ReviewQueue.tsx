@@ -1,11 +1,19 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer, setCardNoBonus, mergeCard } from '../actions'
+import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer, setCardNoBonus, mergeCard, getCardActiveOffers, mergeCardWithOfferSelection } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
 import type { CardGroup, OfferRow, ActiveCardOption } from './page'
 
 const TIERS = ['no-fee', 'entry', 'mid', 'premium', 'super-premium'] as const
+
+type TargetOffer = {
+  id: string
+  offer_type: string
+  headline: string
+  points_value: number | null
+  cashback_value: number | null
+}
 
 type ReviewAdditionalDraft = {
   id: string | undefined
@@ -36,26 +44,59 @@ export default function ReviewQueue({ groups, allCards }: { groups: CardGroup[],
 }
 
 function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCardOption[] }) {
-  const [showEdit,       setShowEdit]       = useState(false)
-  const [showEditOffers, setShowEditOffers] = useState(false)
-  const [showMerge,      setShowMerge]      = useState(false)
-  const [mergeTargetId,  setMergeTargetId]  = useState('')
-  const [mergeErr,       setMergeErr]       = useState<string | null>(null)
-  const [isPending,      startTrans]        = useTransition()
-  const [saveErr,        setSaveErr]        = useState<string | null>(null)
-  const [savedOk,        setSavedOk]        = useState(false)
+  const [showEdit,         setShowEdit]         = useState(false)
+  const [showEditOffers,   setShowEditOffers]   = useState(false)
+  const [showMerge,        setShowMerge]        = useState(false)
+  const [mergeTargetId,    setMergeTargetId]    = useState('')
+  const [mergeErr,         setMergeErr]         = useState<string | null>(null)
+  const [isPending,        startTrans]          = useTransition()
+  const [saveErr,          setSaveErr]          = useState<string | null>(null)
+  const [savedOk,          setSavedOk]          = useState(false)
+  const [targetOffers,     setTargetOffers]     = useState<TargetOffer[] | null>(null)
+  const [isFetchingTarget, setIsFetchingTarget] = useState(false)
+  const [offerSelections,  setOfferSelections]  = useState<Record<string, string>>({})
   const router = useRouter()
 
   const otherCards = allCards.filter(c => c.id !== group.card_id)
 
+  async function handleTargetChange(newId: string) {
+    setMergeTargetId(newId)
+    setTargetOffers(null)
+    setOfferSelections({})
+    if (!newId) return
+    setIsFetchingTarget(true)
+    try {
+      const offers = await getCardActiveOffers(newId)
+      setTargetOffers(offers)
+      // Default selections: prefer stub's pending offer per type, fall back to target's
+      const types = [...new Set([...sortedPending.map(o => o.offer_type), ...offers.map(o => o.offer_type)])]
+      const init: Record<string, string> = {}
+      for (const t of types) {
+        const pending = sortedPending.find(o => o.offer_type === t)
+        const target  = offers.find(o => o.offer_type === t)
+        if (pending) init[t] = pending.id
+        else if (target) init[t] = target.id
+      }
+      setOfferSelections(init)
+    } catch {
+      setMergeErr('Failed to load target card offers')
+    } finally {
+      setIsFetchingTarget(false)
+    }
+  }
+
   function handleMerge() {
     if (!mergeTargetId) return
     const target = otherCards.find(c => c.id === mergeTargetId)
-    if (!window.confirm(`Move all offers from "${group.card_name}" to "${target?.name}" and delete this card?`)) return
+    const targetName = target?.name ?? 'target card'
+    if (!window.confirm(
+      `Stub card "${group.card_name}" will be deleted.\n` +
+      `You're choosing which offers stay active on "${targetName}".`
+    )) return
     setMergeErr(null)
     startTrans(async () => {
       try {
-        await mergeCard(group.card_id, mergeTargetId)
+        await mergeCardWithOfferSelection(group.card_id, mergeTargetId, Object.values(offerSelections))
         router.refresh()
       } catch (e) {
         setMergeErr(e instanceof Error ? e.message : 'Merge failed')
@@ -180,15 +221,14 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
 
       {/* Merge panel */}
       {showMerge && (
-        <div className="px-5 py-4 bg-orange-50 border-b space-y-2">
+        <div className="px-5 py-4 bg-orange-50 border-b space-y-3">
           <p className="text-xs text-orange-700 font-medium">
             Move all offers from this card to an existing card, then delete this card.
-            Duplicate offer headlines will be dropped.
           </p>
           <div className="flex items-center gap-3 flex-wrap">
             <select
               value={mergeTargetId}
-              onChange={e => setMergeTargetId(e.target.value)}
+              onChange={e => { setMergeErr(null); handleTargetChange(e.target.value) }}
               className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             >
               <option value="">— select target card —</option>
@@ -196,15 +236,95 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
                 <option key={c.id} value={c.id}>{c.name} ({c.slug})</option>
               ))}
             </select>
-            <button
-              onClick={handleMerge}
-              disabled={isPending || !mergeTargetId}
-              className="text-sm bg-orange-600 text-white px-3 py-1.5 rounded hover:bg-orange-700 disabled:opacity-40"
-            >
-              {isPending ? 'Merging…' : 'Merge & delete this card'}
-            </button>
-            {mergeErr && <span className="text-xs text-red-600">{mergeErr}</span>}
+            {isFetchingTarget && <span className="text-xs text-gray-400">Loading…</span>}
           </div>
+
+          {/* Offer comparison table */}
+          {targetOffers != null && mergeTargetId && (() => {
+            const targetCard = otherCards.find(c => c.id === mergeTargetId)
+            const offerTypes = [...new Set([
+              ...sortedPending.map(o => o.offer_type),
+              ...targetOffers.map(o => o.offer_type),
+            ])]
+            return (
+              <div className="space-y-2">
+                <p className="text-xs text-orange-600">
+                  For each offer type, choose which offer to keep active on <strong>{targetCard?.name}</strong>:
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="text-xs w-full border border-orange-200 rounded">
+                    <thead className="bg-orange-100 text-orange-800">
+                      <tr>
+                        <th className="px-3 py-1.5 text-left font-medium">Type</th>
+                        <th className="px-3 py-1.5 text-left font-medium">Stub (pending)</th>
+                        <th className="px-3 py-1.5 text-left font-medium">Target (active)</th>
+                        <th className="px-3 py-1.5 text-left font-medium">Keep</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-orange-100">
+                      {offerTypes.map(t => {
+                        const stub   = sortedPending.find(o => o.offer_type === t)
+                        const target = targetOffers.find(o => o.offer_type === t)
+                        const typeLabel = t === 'welcome_bonus' ? 'Welcome'
+                          : t === 'additional_offer' ? 'Additional'
+                          : t
+                        const fmtOffer = (o: { headline: string; points_value: number | null; cashback_value: number | null } | undefined) =>
+                          o ? `${o.headline} ${o.points_value ? `(${o.points_value.toLocaleString('en-CA')} pts)` : o.cashback_value ? `($${o.cashback_value})` : ''}` : '—'
+                        const canChoose = stub && target
+                        return (
+                          <tr key={t} className="bg-white">
+                            <td className="px-3 py-2 font-medium text-orange-700">{typeLabel}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate text-gray-600">{fmtOffer(stub)}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate text-gray-600">{fmtOffer(target)}</td>
+                            <td className="px-3 py-2">
+                              {canChoose ? (
+                                <div className="flex gap-3">
+                                  <label className="flex items-center gap-1 cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`merge-${group.card_id}-${t}`}
+                                      checked={offerSelections[t] === stub.id}
+                                      onChange={() => setOfferSelections(s => ({ ...s, [t]: stub.id }))}
+                                    />
+                                    <span>Stub</span>
+                                  </label>
+                                  <label className="flex items-center gap-1 cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`merge-${group.card_id}-${t}`}
+                                      checked={offerSelections[t] === target.id}
+                                      onChange={() => setOfferSelections(s => ({ ...s, [t]: target.id }))}
+                                    />
+                                    <span>Target</span>
+                                  </label>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">{stub ? 'stub' : 'target'}</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleMerge}
+                    disabled={isPending}
+                    className="text-sm bg-orange-600 text-white px-3 py-1.5 rounded hover:bg-orange-700 disabled:opacity-40"
+                  >
+                    {isPending ? 'Merging…' : 'Merge & delete this card'}
+                  </button>
+                  {mergeErr && <span className="text-xs text-red-600">{mergeErr}</span>}
+                </div>
+              </div>
+            )
+          })()}
+
+          {targetOffers == null && mergeTargetId && !isFetchingTarget && mergeErr && (
+            <span className="text-xs text-red-600">{mergeErr}</span>
+          )}
         </div>
       )}
 
@@ -395,8 +515,42 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
                 </td>
                 <td className="px-4 py-2.5">
                   <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">pending</span>
+                  {(() => {
+                    const reason = welcomePending?.review_reason ?? additionalPending[0]?.review_reason
+                    if (!reason) return null
+                    const label = reason === 'new_card' ? 'new card'
+                      : reason === 'new_offer' ? 'new offer'
+                      : reason === 'higher_bonus' ? 'higher bonus'
+                      : reason === 'updated_terms' ? 'updated terms'
+                      : reason === 'lower_priority_source' ? 'trusted source'
+                      : reason
+                    const cls = reason === 'higher_bonus'
+                      ? 'bg-blue-100 text-blue-700'
+                      : reason === 'new_card' || reason === 'new_offer'
+                      ? 'bg-purple-100 text-purple-700'
+                      : reason === 'lower_priority_source'
+                      ? 'bg-teal-100 text-teal-700'
+                      : 'bg-gray-100 text-gray-600'
+                    return (
+                      <span className={`ml-1.5 inline-block px-1.5 py-0.5 rounded text-xs font-medium ${cls}`}>
+                        {label}
+                      </span>
+                    )
+                  })()}
                 </td>
                 <td className="px-4 py-2.5">
+                  {(() => {
+                    const conflictTypes = sortedPending
+                      .filter(o => sortedActive.some(a => a.offer_type === o.offer_type))
+                      .map(o => o.offer_type === 'welcome_bonus' ? 'welcome bonus'
+                        : o.offer_type === 'additional_offer' ? 'additional offer'
+                        : o.offer_type)
+                    return conflictTypes.length > 0 ? (
+                      <p className="text-xs text-amber-600 mb-1.5">
+                        Will replace current {conflictTypes.join(' & ')}
+                      </p>
+                    ) : null
+                  })()}
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={() => setShowEditOffers(v => !v)}
