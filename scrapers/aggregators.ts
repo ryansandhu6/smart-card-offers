@@ -634,6 +634,41 @@ export class PrinceOfTravelScraper extends BaseScraper {
       }
     })
 
+    // ── Card-level fields from table rows ─────────────────────────────────
+    // Declare here so the table scanner and body-text fallbacks can both populate them.
+    let card_min_income: number | undefined
+    let card_min_household_income: number | undefined
+    let card_foreign_transaction_fee: number | null | undefined
+
+    $('table tr').each((_, tr) => {
+      const cells = $(tr).find('td, th').map((_, td) => $(td).text().replace(/\s+/g, ' ').trim()).get()
+      if (cells.length < 2) return
+      const label = cells[0].toLowerCase()
+      const value = cells[1]
+
+      // Personal / minimum income row
+      if (/minimum\s+(?:personal\s+)?income|personal\s+income/i.test(label) && card_min_income == null) {
+        const m = value.match(/\$?([\d,]+)/)
+        if (m) card_min_income = parseInt(m[1].replace(/,/g, ''))
+      }
+
+      // Household income row (separate from personal income row)
+      if (/household\s+income/i.test(label) && card_min_household_income == null) {
+        const m = value.match(/\$?([\d,]+)/)
+        if (m) card_min_household_income = parseInt(m[1].replace(/,/g, ''))
+      }
+
+      // Foreign transaction fee row
+      if (/foreign\s+(?:transaction\s+)?fee|fx\s+fee/i.test(label) && card_foreign_transaction_fee == null) {
+        if (/no\s*fee|free|\$?0\b|0%/i.test(value) || /none/i.test(value)) {
+          card_foreign_transaction_fee = 0
+        } else {
+          const m = value.match(/([\d.]+)\s*%/)
+          if (m) card_foreign_transaction_fee = parseFloat(m[1])
+        }
+      }
+    })
+
     // Fallback: scan body text for annual fee
     if (card_annual_fee == null) {
       $('p, li, span').each((_, el) => {
@@ -650,35 +685,35 @@ export class PrinceOfTravelScraper extends BaseScraper {
       })
     }
 
+    // ── Body-text fallbacks for income + FX fee (table scanner above runs first) ──
+    const bodyText = $('body').text().replace(/\s+/g, ' ')
+
     // Scan full body text for "first year free / rebate" signals
     if (card_annual_fee_waived == null) {
-      const bodyText = $('body').text().replace(/\s+/g, ' ')
       if (/first.year\s*(?:free|rebate|waived)|annual\s*fee\s*waived\s*(?:in\s*the\s*)?first\s*year/i.test(bodyText) ||
           /First\s*Year\s*Rebate/i.test(bodyText)) {
         card_annual_fee_waived = true
       }
     }
 
-    // ── Minimum income ────────────────────────────────────────────────────
-    let card_min_income: number | undefined
-    let card_min_household_income: number | undefined
-
-    const bodyText = $('body').text().replace(/\s+/g, ' ')
-
-    // "Minimum income: $60,000 personal or $100,000 household"
-    // "Minimum income: $60,000 (individual) / $100,000 (household)"
-    const incomeMatch = bodyText.match(
-      /minimum\s+income[:\s]+\$?([\d,]+)(?:[^$\n]{0,60}\$?([\d,]+)\s*household)?/i
-    )
-    if (incomeMatch) {
-      card_min_income = parseInt(incomeMatch[1].replace(/,/g, ''))
-      if (incomeMatch[2]) card_min_household_income = parseInt(incomeMatch[2].replace(/,/g, ''))
+    // Fallback: "Minimum income: $60,000 personal or $100,000 household" on one line
+    if (card_min_income == null) {
+      const incomeMatch = bodyText.match(
+        /minimum\s+(?:personal\s+)?income[:\s]+\$?([\d,]+)/i
+      )
+      if (incomeMatch) card_min_income = parseInt(incomeMatch[1].replace(/,/g, ''))
+    }
+    if (card_min_household_income == null) {
+      const hhMatch = bodyText.match(
+        /minimum\s+household\s+income[:\s]+\$?([\d,]+)|household[:\s]+\$?([\d,]+)/i
+      )
+      if (hhMatch) card_min_household_income = parseInt((hhMatch[1] ?? hhMatch[2]).replace(/,/g, ''))
     }
 
-    // ── No FX fee indicator ───────────────────────────────────────────────
-    let card_foreign_transaction_fee: number | null | undefined
-    if (/no\s+(?:foreign\s+)?(?:transaction\s+)?fee|no\s+fx\s+fee|\bno\s+fx\b/i.test(bodyText)) {
-      card_foreign_transaction_fee = 0  // 0 = no fee
+    // Fallback: "no foreign transaction fee" → 0
+    if (card_foreign_transaction_fee == null &&
+        /no\s+(?:foreign\s+)?(?:transaction\s+)?fee|no\s+fx\s+fee|\bno\s+fx\b/i.test(bodyText)) {
+      card_foreign_transaction_fee = 0
     }
 
     // ── Earn-rate multipliers ─────────────────────────────────────────────
