@@ -151,31 +151,31 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
           {/* ENTRY */}
           <div className="bg-blue-50 rounded-lg p-3 space-y-1.5">
             <div className="font-semibold text-blue-700 uppercase tracking-wide text-xs border-b border-blue-200 pb-1">Entry</div>
-            <div className="text-blue-400 font-medium">$0–$120/yr</div>
-            <p className="text-blue-800 leading-relaxed">Low annual fee, waived first year. Moderate earn rates (2–3x on categories). Basic travel insurance. No lounge access.</p>
+            <div className="text-blue-400 font-medium">$1–$49/yr</div>
+            <p className="text-blue-800 leading-relaxed">Low annual fee. Moderate earn rates (2–3x on categories). Basic travel insurance. No lounge access.</p>
             <p className="text-blue-700"><span className="font-medium">Best for:</span> first travel card, occasional travellers.</p>
-            <p className="text-blue-400 italic">TD First Class Travel, Scotia Momentum Visa</p>
+            <p className="text-blue-400 italic">CIBC Aeroplan Visa, TD Aeroplan Visa Platinum</p>
           </div>
           {/* MID */}
           <div className="bg-indigo-50 rounded-lg p-3 space-y-1.5">
             <div className="font-semibold text-indigo-700 uppercase tracking-wide text-xs border-b border-indigo-200 pb-1">Mid</div>
-            <div className="text-indigo-400 font-medium">$120–$250/yr</div>
-            <p className="text-indigo-800 leading-relaxed">Solid earn rates (3–5x). Strong travel insurance package. Limited lounge access (1–6 passes/yr) or Priority Pass entry level. FYF common.</p>
+            <div className="text-indigo-400 font-medium">$50–$149/yr</div>
+            <p className="text-indigo-800 leading-relaxed">Solid earn rates (3–5x). Strong travel insurance package. Limited lounge access or Priority Pass entry level. FYF common.</p>
             <p className="text-indigo-700"><span className="font-medium">Best for:</span> frequent travellers, points enthusiasts.</p>
-            <p className="text-indigo-400 italic">Amex Cobalt, TD Aeroplan Visa Infinite</p>
+            <p className="text-indigo-400 italic">Amex Cobalt, Scotia Momentum Visa Infinite</p>
           </div>
           {/* PREMIUM */}
           <div className="bg-purple-50 rounded-lg p-3 space-y-1.5">
             <div className="font-semibold text-purple-700 uppercase tracking-wide text-xs border-b border-purple-200 pb-1">Premium</div>
-            <div className="text-purple-400 font-medium">$250–$599/yr</div>
+            <div className="text-purple-400 font-medium">$150–$299/yr</div>
             <p className="text-purple-800 leading-relaxed">High earn rates (5x+). Comprehensive insurance. Full lounge access (Priority Pass or Amex Centurion). Concierge service. Strong travel credits.</p>
             <p className="text-purple-700"><span className="font-medium">Best for:</span> road warriors, high spenders, business travellers.</p>
-            <p className="text-purple-400 italic">Amex Gold, Scotiabank Passport Visa Infinite</p>
+            <p className="text-purple-400 italic">Amex Gold, TD Aeroplan Visa Infinite</p>
           </div>
           {/* SUPER-PREMIUM */}
           <div className="bg-amber-50 rounded-lg p-3 space-y-1.5">
             <div className="font-semibold text-amber-700 uppercase tracking-wide text-xs border-b border-amber-200 pb-1">Super-Premium</div>
-            <div className="text-amber-400 font-medium">$600+/yr</div>
+            <div className="text-amber-400 font-medium">$300+/yr</div>
             <p className="text-amber-800 leading-relaxed">Top-tier earn rates. Unlimited lounge access globally. Hotel/airline status. Annual travel credits that offset the fee. Metal card.</p>
             <p className="text-amber-700"><span className="font-medium">Best for:</span> luxury travellers, those who can offset the fee with credits.</p>
             <p className="text-amber-400 italic">Amex Platinum, TD Aeroplan Visa Infinite Privilege</p>
