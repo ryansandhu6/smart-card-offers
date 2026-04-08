@@ -283,7 +283,6 @@ export class ChurningCanadaScraper extends BaseScraper {
   // ── GitHub SHA helpers ───────────────────────────────────────────────────
 
   private async fetchLatestSha(): Promise<string | null> {
-    console.log(`[${SCRAPER_NAME}] GET ${COMMITS_API}`)
     try {
       const res = await fetch(COMMITS_API, {
         headers: {
@@ -291,12 +290,9 @@ export class ChurningCanadaScraper extends BaseScraper {
           'Accept':     'application/vnd.github+json',
         },
       })
-      console.log(`[${SCRAPER_NAME}] GitHub commits API → HTTP ${res.status}`)
       if (!res.ok) return null
       const data = await res.json()
-      const sha = (data as Array<{ sha: string }>)?.[0]?.sha ?? null
-      console.log(`[${SCRAPER_NAME}] latest SHA: ${sha?.slice(0, 7) ?? 'none'}`)
-      return sha
+      return (data as Array<{ sha: string }>)?.[0]?.sha ?? null
     } catch (err) {
       console.error(`[${SCRAPER_NAME}] fetchLatestSha error:`, err)
       return null
@@ -313,9 +309,7 @@ export class ChurningCanadaScraper extends BaseScraper {
       .maybeSingle()
     if (error) console.warn(`[${SCRAPER_NAME}] getLastScrapedSha DB error: ${error.message}`)
     const msg = (data as { error_message?: string } | null)?.error_message ?? ''
-    const sha = msg.startsWith('sha:') ? msg.slice(4) : null
-    console.log(`[${SCRAPER_NAME}] last stored SHA: ${sha?.slice(0, 7) ?? 'none (first run)'}`)
-    return sha
+    return msg.startsWith('sha:') ? msg.slice(4) : null
   }
 
   private async storeScrapedSha(sha: string): Promise<void> {
@@ -335,10 +329,8 @@ export class ChurningCanadaScraper extends BaseScraper {
 
   async run(): Promise<ScrapeResult> {
     const startTime = Date.now()
-    console.log(`[${SCRAPER_NAME}] run() started`)
 
     // ── Step 1: fetch latest commit SHA from GitHub ────────────────────────
-    console.log(`[${SCRAPER_NAME}] fetching latest README commit SHA from GitHub...`)
     let latestSha: string | null = null
     let lastSha: string | null = null
 
@@ -351,12 +343,9 @@ export class ChurningCanadaScraper extends BaseScraper {
       console.error(`[${SCRAPER_NAME}] SHA fetch failed:`, err)
     }
 
-    console.log(`[${SCRAPER_NAME}] latestSha=${latestSha?.slice(0, 7) ?? 'null'}  lastSha=${lastSha?.slice(0, 7) ?? 'null'}`)
-
     // ── Step 2: short-circuit if README hasn't changed ─────────────────────
     if (latestSha && latestSha === lastSha) {
       const duration_ms = Date.now() - startTime
-      console.log(`[${SCRAPER_NAME}] README unchanged (sha: ${latestSha.slice(0, 7)}) — skipping scrape`)
       await logScrape({
         scraper_name:    SCRAPER_NAME,
         status:          'success',
@@ -368,22 +357,11 @@ export class ChurningCanadaScraper extends BaseScraper {
       return { scraper: SCRAPER_NAME, status: 'success', records_found: 0, records_updated: 0, records_skipped: 0, duration_ms }
     }
 
-    if (latestSha) {
-      console.log(
-        `[${SCRAPER_NAME}] README changed (${lastSha?.slice(0, 7) ?? 'no prior SHA'} → ${latestSha.slice(0, 7)}), proceeding with full scrape`
-      )
-    } else {
-      console.log(`[${SCRAPER_NAME}] could not determine SHA — scraping unconditionally`)
-    }
-
     // ── Step 3: full scrape via BaseScraper.run() ──────────────────────────
-    console.log(`[${SCRAPER_NAME}] handing off to BaseScraper.run()...`)
     const result = await super.run()
-    console.log(`[${SCRAPER_NAME}] BaseScraper.run() returned: status=${result.status} found=${result.records_found} updated=${result.records_updated} skipped=${result.records_skipped}`)
 
     // ── Step 4: persist SHA so next run can short-circuit ─────────────────
     if (latestSha && result.status !== 'failed') {
-      console.log(`[${SCRAPER_NAME}] storing SHA ${latestSha.slice(0, 7)} in scrape_logs`)
       await this.storeScrapedSha(latestSha)
     }
 

@@ -777,7 +777,6 @@ function ReviewOfferEditPanel({
                 monthly_spend_requirement: draft.isMonthly && draft.monthlySpend ? Number(draft.monthlySpend) : null,
                 bonus_months: draft.isMonthly && draft.bonusMonths ? Number(draft.bonusMonths) : null,
               }
-              console.log('[createOffer] additional_offer payload:', payload)
               await createOffer({
                 ...payload,
                 source_name: 'manual',

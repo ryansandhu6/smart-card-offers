@@ -69,7 +69,6 @@ if (
       prefix:  '@newsletter',
     }) as UpstashLimiter
 
-    console.log('[rate-limit] Upstash rate limiter initialised')
   } catch {
     console.warn(
       '[rate-limit] Upstash env vars set but packages not installed — falling back to in-memory. ' +
