@@ -180,24 +180,13 @@ export abstract class BaseScraper {
   }
 
   protected async saveOffer(offer: ScrapedOffer): Promise<'saved' | 'skipped'> {
-    // ── Validation — runs before any DB work ────────────────────────────────
-
-    // 1. Reject if both value fields are absent or zero
-    const hasPoints = (offer.points_value ?? 0) > 0
-    const hasCash   = (offer.cashback_value ?? 0) > 0
-    if (!hasPoints && !hasCash) {
-      console.warn(`[${this.name}] SKIP [no-value] "${offer.headline}" (${offer.card_name})`)
+    // ── Quick pre-check: reject clearly malformed card names before any DB work ──
+    if (!offer.card_name || offer.card_name.length < 3) {
+      console.warn(`[${this.name}] SKIP [bad-card-name] "${offer.card_name}"`)
       return 'skipped'
     }
 
-    // 2. Reject bad headlines
-    const hl = offer.headline?.trim() ?? ''
-    if (!hl || hl.includes('$undefined') || hl.length < 10) {
-      console.warn(`[${this.name}] SKIP [bad-headline] "${offer.headline}" (${offer.card_name})`)
-      return 'skipped'
-    }
-
-    // ── Step 1 & 2: resolve card ────────────────────────────────────────────
+    // ── Step 1 & 2: resolve card (always runs — card-level field writes happen here) ──
     // Fast path: caller pre-resolved the card ID (e.g. ChurningCanadaScraper).
     // Skip DB lookup and card creation entirely.
     let card_id: string
@@ -249,16 +238,19 @@ export abstract class BaseScraper {
               .eq('id', card_id).is('supplementary_card_fee', null)
           }
           if (offer.card_foreign_transaction_fee != null) {
-            await supabaseAdmin.from('credit_cards').update({ foreign_transaction_fee: offer.card_foreign_transaction_fee })
+            const { error: fxErr, count: fxCount } = await supabaseAdmin.from('credit_cards').update({ foreign_transaction_fee: offer.card_foreign_transaction_fee })
               .eq('id', card_id).is('foreign_transaction_fee', null)
+            if (!fxErr) console.log(`[${this.name}] card-field fx_fee=${offer.card_foreign_transaction_fee} → ${fxCount ?? 0} row(s) updated (${offer.card_name})`)
           }
           if (offer.card_min_income != null) {
-            await supabaseAdmin.from('credit_cards').update({ min_income: offer.card_min_income })
+            const { error: incErr, count: incCount } = await supabaseAdmin.from('credit_cards').update({ min_income: offer.card_min_income })
               .eq('id', card_id).is('min_income', null)
+            if (!incErr) console.log(`[${this.name}] card-field min_income=${offer.card_min_income} → ${incCount ?? 0} row(s) updated (${offer.card_name})`)
           }
           if (offer.card_min_household_income != null) {
-            await supabaseAdmin.from('credit_cards').update({ minimum_household_income: offer.card_min_household_income })
+            const { error: hhErr, count: hhCount } = await supabaseAdmin.from('credit_cards').update({ minimum_household_income: offer.card_min_household_income })
               .eq('id', card_id).is('minimum_household_income', null)
+            if (!hhErr) console.log(`[${this.name}] card-field min_household=${offer.card_min_household_income} → ${hhCount ?? 0} row(s) updated (${offer.card_name})`)
           }
           // Annual fee only written when DB value is still the default (0).
           if (offer.card_annual_fee != null) {
@@ -274,6 +266,24 @@ export abstract class BaseScraper {
     }
 
     // ── Post-resolution validation ──────────────────────────────────────────
+    // Card-level field writes above are complete. Now validate the offer itself.
+    // Returning 'skipped' here is fine — card metadata was already written.
+
+    // 1. Reject if both value fields are absent or zero
+    const hasPoints = (offer.points_value ?? 0) > 0
+    const hasCash   = (offer.cashback_value ?? 0) > 0
+    if (!hasPoints && !hasCash) {
+      console.warn(`[${this.name}] SKIP [no-value] "${offer.headline}" (${offer.card_name})`)
+      return 'skipped'
+    }
+
+    // 2. Reject bad headlines
+    const hl = offer.headline?.trim() ?? ''
+    if (!hl || hl.includes('$undefined') || hl.length < 10) {
+      console.warn(`[${this.name}] SKIP [bad-headline] "${offer.headline}" (${offer.card_name})`)
+      return 'skipped'
+    }
+
     const incomingPriority = offer.sourcePriority ?? this.sourcePriority
 
     // 3. Reject points_value > 500,000 unless card is a Bonvoy program

@@ -696,18 +696,20 @@ export class PrinceOfTravelScraper extends BaseScraper {
       }
     }
 
-    // Fallback: "Minimum income: $60,000 personal or $100,000 household" on one line
-    if (card_min_income == null) {
+    // Fallback: PoT format "Minimum income: $80,000 personal or $150,000 household"
+    // Extract both values from the same line in one pass.
+    if (card_min_income == null || card_min_household_income == null) {
       const incomeMatch = bodyText.match(
-        /minimum\s+(?:personal\s+)?income[:\s]+\$?([\d,]+)/i
+        /minimum\s+income[:\s]+\$?\s*([\d,]+)[^$\n]{0,100}\$?\s*([\d,]+)\s+household/i
       )
-      if (incomeMatch) card_min_income = parseInt(incomeMatch[1].replace(/,/g, ''))
-    }
-    if (card_min_household_income == null) {
-      const hhMatch = bodyText.match(
-        /minimum\s+household\s+income[:\s]+\$?([\d,]+)|household[:\s]+\$?([\d,]+)/i
-      )
-      if (hhMatch) card_min_household_income = parseInt((hhMatch[1] ?? hhMatch[2]).replace(/,/g, ''))
+      if (incomeMatch) {
+        if (card_min_income == null) card_min_income = parseInt(incomeMatch[1].replace(/,/g, ''))
+        if (card_min_household_income == null) card_min_household_income = parseInt(incomeMatch[2].replace(/,/g, ''))
+      } else {
+        // Personal-only format: "Minimum income: $60,000"
+        const personalMatch = bodyText.match(/minimum\s+income[:\s]+\$?\s*([\d,]+)/i)
+        if (personalMatch && card_min_income == null) card_min_income = parseInt(personalMatch[1].replace(/,/g, ''))
+      }
     }
 
     // Fallback: "no foreign transaction fee" → 0
