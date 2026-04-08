@@ -71,9 +71,14 @@ export async function updateCard(
     has_no_bonus?: boolean
   }
 ) {
+  // Tag as manual when description is explicitly set by an admin
+  const payload: typeof data & { content_source?: string } = { ...data }
+  if (data.short_description != null && data.short_description.trim() !== '') {
+    payload.content_source = 'manual'
+  }
   const { error } = await supabaseAdmin
     .from('credit_cards')
-    .update(data)
+    .update(payload)
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/cards')
@@ -250,9 +255,12 @@ export async function updateOffer(
     expires_at: string | null
   }
 ) {
+  // Tag headline as manual when admin explicitly sets it
+  const payload: typeof data & { content_source?: string } = { ...data }
+  if (data.headline.trim()) payload.content_source = 'manual'
   const { error } = await supabaseAdmin
     .from('card_offers')
-    .update(data)
+    .update(payload)
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/offers')
