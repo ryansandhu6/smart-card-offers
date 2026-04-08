@@ -71,6 +71,9 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
   const [description, setDescription] = useState(group.card_description ?? '')
   const [referralUrl, setReferralUrl] = useState(group.card_referral_url ?? '')
   const [imageUrl,    setImageUrl]    = useState(group.card_image_url ?? '')
+  const [fxFee,       setFxFee]       = useState(group.card_foreign_transaction_fee?.toString() ?? '')
+  const [minIncome,   setMinIncome]   = useState(group.card_min_income?.toString() ?? '')
+  const [minHousehold, setMinHousehold] = useState(group.card_min_household_income?.toString() ?? '')
 
   function handleSaveCard() {
     setSaveErr(null)
@@ -86,6 +89,9 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
           short_description: description.trim() || null,
           referral_url: referralUrl.trim() || null,
           image_url: imageUrl.trim() || null,
+          foreign_transaction_fee: fxFee !== '' ? Number(fxFee) : null,
+          min_income: minIncome !== '' ? Number(minIncome) : null,
+          minimum_household_income: minHousehold !== '' ? Number(minHousehold) : null,
         })
         setSavedOk(true)
         router.refresh()
@@ -246,6 +252,44 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
             <div>
               <label className="block text-xs text-gray-500 mb-1">Image URL</label>
               <input type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">
+                Foreign Transaction Fee (%)
+                <span className="text-gray-400 ml-1">— blank = unknown, 0 = no fee</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="10"
+                value={fxFee}
+                onChange={e => setFxFee(e.target.value)}
+                placeholder="e.g. 2.5"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Min. Personal Income ($)</label>
+              <input
+                type="number"
+                step="1000"
+                value={minIncome}
+                onChange={e => setMinIncome(e.target.value)}
+                placeholder="e.g. 60000"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Min. Household Income ($)</label>
+              <input
+                type="number"
+                step="1000"
+                value={minHousehold}
+                onChange={e => setMinHousehold(e.target.value)}
+                placeholder="e.g. 80000"
+                className={inputCls}
+              />
             </div>
           </div>
           <div className="flex items-center gap-3">
