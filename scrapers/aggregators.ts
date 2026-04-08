@@ -111,218 +111,219 @@ function nearestImg($: cheerio.CheerioAPI, el: any, baseUrl: string): string | u
 // MintFlying
 // robots.txt: Allow: /  — fully permitted
 //
-// Strategy: parse JSON-LD CollectionPage/ItemList
-// embedded in the Next.js page. Each card object has:
-//   title, issuer, signupBonus, signupBonusValue,
-//   minSpendRequired, minSpendPeriod, signupBonusExpiry
-// Falls back to __NEXT_DATA__ recursive walk if
-// JSON-LD yields nothing.
+// Strategy: the listing page (/credit-cards) embeds all card objects in the
+// RSC payload via self.__next_f.push([1, "..."]) chunks. Each card object has:
+//   title, slug, issuer, annualFee, firstYearFeeWaived, additionalCardFee,
+//   foreignTransactionFee, annualIncome, householdIncome,
+//   signupBonus, minSpendRequired, minSpendPeriod, minSpendTiers,
+//   earnRates, rewardsProgram, pointsCurrency, tags, loungeAccess,
+//   applyUrl, cardImage, sourceUrl
+// We scan for every "signupBonus" occurrence and extract the enclosing object.
+// No detail page scraping needed — listing page has all fields.
 // -----------------------------------------------
 export class MintFlyingScraper extends BaseScraper {
   name = 'mintflying'
   issuerSlug = 'aggregator'
-  protected sourcePriority = 4   // aggregator — lowest trust tier
+  protected sourcePriority = 2   // curated editorial — same tier as PoT
   protected sourceName     = 'mintflying'
-  protected isVerified = false
+  protected isVerified     = true
 
-  private readonly SOURCE_URL = 'https://www.mintflying.com/credit-cards'
+  private readonly LISTING_URL = 'https://www.mintflying.com/credit-cards'
+  private readonly BASE_URL    = 'https://www.mintflying.com'
 
   async scrape(): Promise<ScrapedOffer[]> {
-    const res = await this.fetchWithTimeout(this.SOURCE_URL, {
-      headers: { 'User-Agent': 'Mozilla/5.0 Chrome/120', 'Accept-Language': 'en-CA' },
-    })
+    const res = await this.fetchWithTimeout(this.LISTING_URL)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
     const html = await res.text()
-    const $ = cheerio.load(html)
-    const offers: ScrapedOffer[] = []
-
-    // Strategy 1: JSON-LD CollectionPage / ItemList blocks
-    $('script[type="application/ld+json"]').each((_, el) => {
-      try {
-        offers.push(...this.extractFromSchema(JSON.parse($(el).html() ?? '')))
-      } catch {}
-    })
-
-    // Strategy 2: Next.js App Router streams data via __next_f.push([type, payload])
-    // Type-1 chunks carry the RSC/JSON payload as a string
-    if (offers.length === 0) {
-      const chunks: string[] = []
-      const chunkRe = /\.__next_f\.push\(\[1\s*,\s*"((?:[^"\\]|\\.)*)"\]\)/g
-      let m: RegExpExecArray | null
-      while ((m = chunkRe.exec(html)) !== null) {
-        try { chunks.push(JSON.parse(`"${m[1]}"`) ) } catch {}
-      }
-      const combined = chunks.join('')
-      offers.push(...this.extractFromRscPayload(combined))
-    }
-
-    // Strategy 3: Brute-force — find every JSON object in the page that has
-    // a signupBonus field by scanning for the key and extracting surrounding JSON
-    if (offers.length === 0) {
-      offers.push(...this.extractByKeywordScan(html))
-    }
+    const offers = this.extractAllCards(html)
 
     const filtered = offers.filter(o => KNOWN_ISSUER_SLUGS.has(o.issuer_slug))
-    console.log(`[mintflying] found ${offers.length} offers, ${filtered.length} with known issuers`)
+    console.log(`[mintflying] extracted ${offers.length} cards, ${filtered.length} with known issuers`)
     return filtered
   }
 
-  /** Parse RSC payload string — extract arrays/objects containing signupBonus */
-  private extractFromRscPayload(payload: string): ScrapedOffer[] {
-    const offers: ScrapedOffer[] = []
-    // RSC lines start with an id prefix like "a:..." or just bare JSON
-    // Split on RSC record boundaries and try parsing each piece
-    const lines = payload.split(/\n(?=[0-9a-f]+:)/)
-    for (const line of lines) {
-      const jsonStart = line.indexOf(':') + 1
-      const raw = line.slice(jsonStart).trim()
-      if (!raw.startsWith('{') && !raw.startsWith('[')) continue
-      try {
-        const parsed = JSON.parse(raw)
-        offers.push(...this.walkNextData(parsed))
-      } catch {}
+  /**
+   * Decode all RSC chunks from the page, then scan the decoded payload for
+   * card objects. The RSC data is double-escaped in the raw HTML
+   * (self.__next_f.push([1, "...\"signupBonus\"..."])) so we must first
+   * JSON-decode each chunk string before searching for keys.
+   */
+  private extractAllCards(html: string): ScrapedOffer[] {
+    // Step 1 — decode each __next_f.push([1, "..."]) chunk into a plain string
+    const chunkRe = /\.__next_f\.push\(\[1\s*,\s*"((?:[^"\\]|\\.)*)"\]\)/g
+    const chunks: string[] = []
+    let m: RegExpExecArray | null
+    while ((m = chunkRe.exec(html)) !== null) {
+      try { chunks.push(JSON.parse(`"${m[1]}"`)) } catch {}
     }
-    return offers
-  }
+    const payload = chunks.join('')
 
-  /** Scan raw HTML for signupBonus occurrences and extract enclosing JSON objects */
-  private extractByKeywordScan(html: string): ScrapedOffer[] {
+    // Step 2 — find every "signupBonus" key and extract the enclosing object
     const offers: ScrapedOffer[] = []
     const seen = new Set<string>()
     let pos = 0
+
     while (true) {
-      const idx = html.indexOf('"signupBonus"', pos)
+      const idx = payload.indexOf('"signupBonus"', pos)
       if (idx === -1) break
       pos = idx + 1
 
-      // Walk back to find the opening { of the enclosing object
+      // Walk back to find the opening { of this card object (up to 5 000 chars)
       let start = idx
       let depth = 0
-      for (let i = idx; i >= Math.max(0, idx - 2000); i--) {
-        if (html[i] === '}') depth++
-        if (html[i] === '{') {
+      for (let i = idx; i >= Math.max(0, idx - 5000); i--) {
+        if (payload[i] === '}') depth++
+        else if (payload[i] === '{') {
           if (depth === 0) { start = i; break }
           depth--
         }
       }
-      // Walk forward to find closing }
-      let end = idx
+
+      // Walk forward to find the matching closing }
       depth = 0
-      for (let i = start; i < Math.min(html.length, start + 3000); i++) {
-        if (html[i] === '{') depth++
-        if (html[i] === '}') {
+      let end = start
+      for (let i = start; i < Math.min(payload.length, start + 5000); i++) {
+        if (payload[i] === '{') depth++
+        else if (payload[i] === '}') {
           depth--
           if (depth === 0) { end = i + 1; break }
         }
       }
 
-      const candidate = html.slice(start, end)
-      if (seen.has(candidate)) continue
-      seen.add(candidate)
+      const raw = payload.slice(start, end)
+      if (seen.has(raw)) continue
+      seen.add(raw)
 
       try {
-        const card = JSON.parse(candidate)
+        const card = JSON.parse(raw)
         if (card.signupBonus && (card.title || card.name)) {
           const offer = this.cardToOffer(card)
           if (offer) offers.push(offer)
         }
       } catch {}
     }
+
     return offers
   }
 
-  private extractFromSchema(json: any): ScrapedOffer[] {
-    if (Array.isArray(json)) return json.flatMap(j => this.extractFromSchema(j))
-
-    const type: string = json['@type'] ?? ''
-
-    // Unwrap CollectionPage / ItemList containers
-    if (type === 'ItemList' || type === 'CollectionPage') {
-      const list = json.itemListElement ?? json.mainEntity?.itemListElement ?? []
-      return list.flatMap((entry: any) => this.extractFromSchema(entry.item ?? entry))
-    }
-
-    // Individual card-like objects
-    if (json.signupBonus || json.signupBonusValue || json.title) {
-      const offer = this.cardToOffer(json)
-      return offer ? [offer] : []
-    }
-
-    return []
-  }
-
   private cardToOffer(card: any): ScrapedOffer | null {
-    const headline = String(card.signupBonus ?? card.description ?? '').trim()
     const cardName = String(card.title ?? card.name ?? '').trim()
-    if (!headline || !cardName) return null
+    const rawBonus  = String(card.signupBonus ?? '').trim()
+    if (!cardName || !rawBonus) return null
 
     const issuer_slug = resolveIssuer(String(card.issuer ?? card.brand ?? ''))
-    // Never use signupBonusValue — MintFlying populates it with a CPP dollar
-    // value (e.g. 900 = $900), not a raw points count. Always parse from headline.
-    const points_value: number | undefined = this.parsePoints(headline)
 
-    // Parse cashback dollar amounts: "$250 cash back", "$200 cashback", etc.
-    const cashbackMatch = headline.match(/\$([\d,]+)(?:\s*cash\s*back|\s*cashback)/i)
-    const cashback_value: number | undefined = cashbackMatch
-      ? parseFloat(cashbackMatch[1].replace(/,/g, ''))
+    // ── Welcome bonus headline ───────────────────────────────────────────────
+    // signupBonus is a text headline ("Up to 60,000 Membership Rewards points")
+    const headline = rawBonus
+
+    // ── Points / cashback ────────────────────────────────────────────────────
+    // Never use signupBonusValue: MintFlying sets it to a CPP dollar estimate.
+    const points_value   = this.parsePoints(headline)
+    const cashbackMatch  = headline.match(/\$([\d,]+)(?:\s*cash\s*back|\s*cashback)/i)
+    const cashback_value = cashbackMatch ? parseFloat(cashbackMatch[1].replace(/,/g, '')) : undefined
+
+    // ── Spend requirement ────────────────────────────────────────────────────
+    // minSpendRequired is an integer; minSpendPeriod is e.g. "first 3 months"
+    const periodDays         = this.parsePeriod(String(card.minSpendPeriod ?? ''))
+    const spendFromText      = this.parseSpend(headline)
+    const spend_requirement  = card.minSpendRequired != null ? Number(card.minSpendRequired) : spendFromText?.amount
+    const spend_timeframe_days = periodDays ?? spendFromText?.days
+
+    // ── Bonus tier details ───────────────────────────────────────────────────
+    // minSpendTiers: [{bonus, amount, period}, ...]
+    const tiers = Array.isArray(card.minSpendTiers) ? card.minSpendTiers as Array<{bonus: string; amount: number; period: string}> : []
+    const details = tiers.length > 0
+      ? tiers.map(t => `${t.bonus} with $${Number(t.amount).toLocaleString('en-CA')} spend in ${t.period}`).join(' • ')
       : undefined
 
-    const periodDays = this.parsePeriod(String(card.minSpendPeriod ?? ''))
-    const spendFromText = this.parseSpend(headline)
-    const spend_requirement: number | undefined =
-      card.minSpendRequired != null ? Number(card.minSpendRequired) : spendFromText?.amount
-    const spend_timeframe_days: number | undefined = periodDays ?? spendFromText?.days
-
-    const expires_at = card.signupBonusExpiry
-      ? this.parseExpiry(`expires ${card.signupBonusExpiry}`)
+    // ── Expiry ───────────────────────────────────────────────────────────────
+    const rawExpiry = String(card.signupBonusExpiry ?? '')
+    const expires_at = (rawExpiry && !rawExpiry.includes('undefined'))
+      ? this.parseExpiry(`expires ${rawExpiry}`)
       : undefined
 
-    const image_url = this.resolveImageUrl(card.cardImage ?? card.image ?? card.imageUrl ?? '')
+    // ── URLs + image ─────────────────────────────────────────────────────────
+    const slug       = String(card.slug ?? '')
+    const source_url = slug ? `${this.BASE_URL}/credit-cards/${slug}` : this.LISTING_URL
+    const apply_url  = String(card.applyUrl ?? card.sourceUrl ?? source_url)
+    const raw_img    = String(card.cardImage ?? card.image ?? card.imageUrl ?? '')
+    const image_url  = raw_img
+      ? (raw_img.startsWith('http') ? raw_img : `${this.BASE_URL}${raw_img}`)
+      : undefined
+
+    // ── Card-level fields ────────────────────────────────────────────────────
+    const isSentinel = (v: unknown) => v == null || String(v).includes('undefined')
+
+    const card_annual_fee         = card.annualFee != null ? Number(card.annualFee) : undefined
+    const card_annual_fee_waived  = typeof card.firstYearFeeWaived === 'boolean' ? card.firstYearFeeWaived : undefined
+    const card_supplementary_fee  = card.additionalCardFee != null ? Number(card.additionalCardFee) : undefined
+
+    const card_foreign_transaction_fee: number | null | undefined = isSentinel(card.foreignTransactionFee)
+      ? undefined
+      : Number(card.foreignTransactionFee)   // 0 = no fee, 2.5 = standard fee
+
+    const card_min_income: number | undefined = isSentinel(card.annualIncome)
+      ? undefined
+      : Number(card.annualIncome)
+
+    const card_min_household_income: number | undefined = isSentinel(card.householdIncome)
+      ? undefined
+      : Number(card.householdIncome)
+
+    // ── Earn-rate multipliers ─────────────────────────────────────────────────
+    // earnRates: [{category: "Air Canada", rate: "2 Aeroplan points per $1"}, ...]
+    const earn_rate_multipliers: Record<string, number> = {}
+    for (const er of (card.earnRates ?? []) as Array<{category: string; rate: string}>) {
+      const rateMatch = er.rate?.match(/(\d+(?:\.\d+)?)\s*(?:points?|miles?|MR|%)?\s*per\s*\$1/i)
+        ?? er.rate?.match(/^(\d+(?:\.\d+)?)\s*[x×]/i)
+      if (!rateMatch) continue
+      const rate = parseFloat(rateMatch[1])
+      if (rate <= 0 || rate > 30) continue
+      const cat = er.category
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .trim()
+        .replace(/\s+/g, '_')
+        .slice(0, 30)
+      if (cat && !earn_rate_multipliers[cat]) earn_rate_multipliers[cat] = rate
+    }
+
+    // ── Feature tags → extra_perks ────────────────────────────────────────────
+    const tags: string[] = Array.isArray(card.tags) ? card.tags : []
+    if (card.loungeAccess === true && !tags.includes('Lounge Access')) tags.push('Lounge Access')
 
     return {
       card_name: cardName,
       issuer_slug,
-      offer_type: 'welcome_bonus',
-      headline: headline.slice(0, 250),
+      offer_type:          'welcome_bonus',
+      headline:            headline.slice(0, 250),
+      details,
       points_value,
       cashback_value,
       spend_requirement,
       spend_timeframe_days,
-      is_limited_time: !!expires_at,
+      extra_perks:         tags.length ? tags.slice(0, 10) : undefined,
+      is_limited_time:     !!expires_at,
       expires_at,
-      source_url: String(card.url ?? this.SOURCE_URL),
-      apply_url: String(card.applyUrl ?? card.url ?? this.SOURCE_URL),
-      image_url: image_url || undefined,
+      source_url,
+      apply_url,
+      image_url,
+      earn_rate_multipliers: Object.keys(earn_rate_multipliers).length ? earn_rate_multipliers : undefined,
+      card_annual_fee,
+      card_annual_fee_waived,
+      card_supplementary_fee,
+      card_foreign_transaction_fee,
+      card_min_income,
+      card_min_household_income,
     }
-  }
-
-  /** Recursively search __NEXT_DATA__ for arrays of card-like objects */
-  private walkNextData(obj: any, depth = 0): ScrapedOffer[] {
-    if (depth > 12 || obj == null || typeof obj !== 'object') return []
-    if (Array.isArray(obj)) {
-      if (obj.length > 0 && (obj[0]?.signupBonus != null || obj[0]?.signupBonusValue != null)) {
-        return obj.flatMap((c: any) => {
-          const o = this.cardToOffer(c)
-          return o ? [o] : []
-        })
-      }
-      return obj.flatMap((v: any) => this.walkNextData(v, depth + 1))
-    }
-    return Object.values(obj).flatMap((v: any) => this.walkNextData(v, depth + 1))
   }
 
   private parsePeriod(text: string): number | undefined {
     const m = text.match(/(\d+)\s*(month|day)/i)
     if (!m) return undefined
     return m[2].toLowerCase().startsWith('month') ? Number(m[1]) * 30 : Number(m[1])
-  }
-
-  private resolveImageUrl(raw: string): string {
-    if (!raw) return ''
-    if (raw.startsWith('http')) return raw
-    if (raw.startsWith('/')) return `https://www.mintflying.com${raw}`
-    return ''
   }
 }
 
@@ -454,7 +455,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
   issuerSlug = 'aggregator'
   // Priority 1: richest data source — scrapes every card page individually,
   // capturing images, earn-rate multipliers, expiry dates, and full offer breakdowns.
-  protected sourcePriority = 2   // curated editorial
+  protected sourcePriority = 1   // curated editorial — highest trust
   protected sourceName     = 'princeoftravel'
   protected isVerified = true
 

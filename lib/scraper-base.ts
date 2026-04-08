@@ -92,10 +92,10 @@ export abstract class BaseScraper {
 
   /**
    * Source trust level — lower number = higher trust.
-   *   1 = churning community  (ChurningCanadaScraper)
-   *   2 = curated editorial   (PrinceOfTravelScraper)
-   *   3 = bank-direct         (Scotiabank, BMO, RBC, CIBC, Amex, TD scrapers)
-   *   4 = aggregator          (MintFlyingScraper, RatehubCardsScraper)
+   *   1 = curated editorial   (PrinceOfTravelScraper)
+   *   2 = curated aggregator  (MintFlyingScraper — explicit structured data)
+   *   3 = community           (ChurningCanadaScraper)
+   *   4 = aggregator          (RatehubCardsScraper, CreditCardGenius, others)
    *
    * A higher-numbered source will NEVER overwrite a lower-numbered row's content.
    * On a priority clash only `last_seen_at` and `confidence_score` are refreshed,
@@ -238,19 +238,19 @@ export abstract class BaseScraper {
               .eq('id', card_id).is('supplementary_card_fee', null)
           }
           if (offer.card_foreign_transaction_fee != null) {
-            const { error: fxErr, count: fxCount } = await supabaseAdmin.from('credit_cards').update({ foreign_transaction_fee: offer.card_foreign_transaction_fee })
+            const { error: fxErr } = await supabaseAdmin.from('credit_cards').update({ foreign_transaction_fee: offer.card_foreign_transaction_fee })
               .eq('id', card_id).is('foreign_transaction_fee', null)
-            if (!fxErr) console.log(`[${this.name}] card-field fx_fee=${offer.card_foreign_transaction_fee} → ${fxCount ?? 0} row(s) updated (${offer.card_name})`)
+            if (fxErr) console.warn(`[${this.name}] card-field fx_fee write failed: ${fxErr.message} (${offer.card_name})`)
           }
           if (offer.card_min_income != null) {
-            const { error: incErr, count: incCount } = await supabaseAdmin.from('credit_cards').update({ min_income: offer.card_min_income })
+            const { error: incErr } = await supabaseAdmin.from('credit_cards').update({ min_income: offer.card_min_income })
               .eq('id', card_id).is('min_income', null)
-            if (!incErr) console.log(`[${this.name}] card-field min_income=${offer.card_min_income} → ${incCount ?? 0} row(s) updated (${offer.card_name})`)
+            if (incErr) console.warn(`[${this.name}] card-field min_income write failed: ${incErr.message} (${offer.card_name})`)
           }
           if (offer.card_min_household_income != null) {
-            const { error: hhErr, count: hhCount } = await supabaseAdmin.from('credit_cards').update({ minimum_household_income: offer.card_min_household_income })
+            const { error: hhErr } = await supabaseAdmin.from('credit_cards').update({ minimum_household_income: offer.card_min_household_income })
               .eq('id', card_id).is('minimum_household_income', null)
-            if (!hhErr) console.log(`[${this.name}] card-field min_household=${offer.card_min_household_income} → ${hhCount ?? 0} row(s) updated (${offer.card_name})`)
+            if (hhErr) console.warn(`[${this.name}] card-field min_household write failed: ${hhErr.message} (${offer.card_name})`)
           }
           // Annual fee only written when DB value is still the default (0).
           if (offer.card_annual_fee != null) {

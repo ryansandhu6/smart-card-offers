@@ -200,8 +200,8 @@ export class ChurningCanadaScraper extends BaseScraper {
   name       = SCRAPER_NAME
   issuerSlug = 'amex'  // unused — each offer resolves its own card
 
-  // Community-maintained, manually curated — highest trust tier (priority 1)
-  protected sourcePriority = 1
+  // Community-maintained, manually curated — priority 3 (below PoT=1 and MintFlying=2)
+  protected sourcePriority = 3
   protected sourceName     = 'churningcanada'
   protected isVerified     = true
 
