@@ -62,7 +62,7 @@ export default async function AdminDashboard() {
 
   // Cards needing attention
   type ActiveCard = { id: string; name: string; slug: string; short_description: string | null; referral_url: string | null; has_no_bonus: boolean }
-  type AttentionCard = { id: string; name: string; slug: string; issues: string[] }
+  type AttentionCard = { id: string; name: string; slug: string; issues: string[]; hasPending: boolean }
 
   const pendingCardIdSet = new Set((pendingOffers ?? []).map((o: { card_id: string }) => o.card_id))
 
@@ -73,15 +73,21 @@ export default async function AdminDashboard() {
     offersByCard.set(o.card_id, list)
   }
 
+  // Distinct cards that have at least one active offer
+  const cardsWithOffersCount = offersByCard.size
+
   const attentionCards: AttentionCard[] = []
   for (const card of (allActiveCards ?? []) as ActiveCard[]) {
-    if (pendingCardIdSet.has(card.id)) continue
     if (card.has_no_bonus) continue
+    const hasPending = pendingCardIdSet.has(card.id)
     const issues: string[] = []
     const offers = offersByCard.get(card.id) ?? []
 
     if (!card.short_description) issues.push('no description')
-    if (offers.length === 0) issues.push('no active offers')
+    if (offers.length === 0) {
+      // Distinguish between "nothing at all" and "waiting for review"
+      issues.push(hasPending ? 'offers pending review' : 'no active offers')
+    }
     if (offers.some(o => o.headline?.includes('$undefined'))) issues.push('$undefined headline')
     if (offers.some(o =>
       (o.points_value === 0 || o.points_value == null) &&
@@ -90,7 +96,7 @@ export default async function AdminDashboard() {
     )) issues.push('zero-value offer')
     if (!card.referral_url) issues.push('no referral URL')
 
-    if (issues.length > 0) attentionCards.push({ id: card.id, name: card.name, slug: card.slug, issues })
+    if (issues.length > 0) attentionCards.push({ id: card.id, name: card.name, slug: card.slug, issues, hasPending })
   }
   // Sort: most issues first
   attentionCards.sort((a, b) => b.issues.length - a.issues.length)
@@ -109,7 +115,11 @@ export default async function AdminDashboard() {
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Stat label="Active Cards"    value={cardCount  ?? 0} />
-        <Stat label="Active Offers"   value={offerCount ?? 0} />
+        <StatDouble
+          label="Active Offers"
+          value={cardsWithOffersCount}
+          sub={`${(offerCount ?? 0).toLocaleString()} total offers`}
+        />
         <StatLink
           label="Pending Review"
           value={pendingCount ?? 0}
@@ -147,15 +157,25 @@ export default async function AdminDashboard() {
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{c.slug}</td>
                     <td className="px-4 py-2.5">
                       <div className="flex flex-wrap gap-1">
-                        {c.issues.map(issue => (
-                          <span key={issue} className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                        {c.issues.map(issue => {
+                          const cls =
                             issue === 'no active offers' || issue === '$undefined headline' || issue === 'zero-value offer'
                               ? 'bg-red-100 text-red-700'
+                              : issue === 'offers pending review'
+                              ? 'bg-yellow-100 text-yellow-700'
                               : issue === 'no description'
                               ? 'bg-amber-100 text-amber-700'
                               : 'bg-gray-100 text-gray-500'
-                          }`}>{issue}</span>
-                        ))}
+                          const baseClass = `inline-block px-1.5 py-0.5 rounded text-xs font-medium ${cls}`
+                          if (issue === 'offers pending review') {
+                            return (
+                              <Link key={issue} href={`/admin/review#card-${c.slug}`} className={`${baseClass} hover:underline`}>
+                                {issue} →
+                              </Link>
+                            )
+                          }
+                          return <span key={issue} className={baseClass}>{issue}</span>
+                        })}
                       </div>
                     </td>
                     <td className="px-4 py-2.5">
@@ -238,6 +258,16 @@ function StatLink({ label, value, href, highlight }: { label: string; value: num
       <div className={`text-3xl font-bold tabular-nums ${highlight ? 'text-amber-600' : ''}`}>{value.toLocaleString()}</div>
       <div className="text-sm text-gray-500 mt-1">{label} →</div>
     </Link>
+  )
+}
+
+function StatDouble({ label, value, sub }: { label: string; value: number; sub: string }) {
+  return (
+    <div className="bg-white rounded-lg shadow p-5">
+      <div className="text-3xl font-bold tabular-nums">{value.toLocaleString()}</div>
+      <div className="text-sm text-gray-500 mt-1">{label}</div>
+      <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
+    </div>
   )
 }
 

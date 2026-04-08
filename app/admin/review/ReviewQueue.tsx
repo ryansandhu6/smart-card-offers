@@ -188,7 +188,7 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
   const inputCls = 'border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full'
 
   return (
-    <section className="bg-white rounded-lg shadow overflow-hidden">
+    <section id={`card-${group.card_slug}`} className="bg-white rounded-lg shadow overflow-hidden">
       {/* Card header */}
       <div className="px-5 py-3 bg-gray-50 border-b flex items-center gap-3 flex-wrap">
         <span className="font-semibold">{group.card_name}</span>
