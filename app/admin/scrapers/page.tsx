@@ -22,9 +22,12 @@ type RunResult = {
 }
 
 const SCRAPERS = [
-  { id: 'churningcanada', label: 'ChurningCanada',  desc: 'SHA-gated GitHub README scrape (~5s)' },
-  { id: 'princeoftravel', label: 'Prince of Travel', desc: 'Per-card Next.js RSC scrape (~3 min)' },
-  { id: 'mintflying',     label: 'MintFlying',       desc: 'Aggregator HTML scrape (~1 min)' },
+  // ChurningCanada is temporarily disabled pending data verification.
+  // Code is preserved; re-enable by setting disabled: false and restoring it to
+  // the cron routes (scrape/fast and scrape/route).
+  { id: 'churningcanada', label: 'ChurningCanada',  desc: 'SHA-gated GitHub README scrape (~5s)', disabled: true  },
+  { id: 'princeoftravel', label: 'Prince of Travel', desc: 'Per-card Next.js RSC scrape (~3 min)', disabled: false },
+  { id: 'mintflying',     label: 'MintFlying',       desc: 'Aggregator HTML scrape (~1 min)',      disabled: false },
 ]
 
 export default function ScrapersPage() {
@@ -87,10 +90,22 @@ export default function ScrapersPage() {
           const isRunning = running === s.id
 
           return (
-            <div key={s.id} className="bg-white rounded-lg shadow p-5 flex flex-col gap-4">
+            <div key={s.id} className={`bg-white rounded-lg shadow p-5 flex flex-col gap-4 ${s.disabled ? 'opacity-60' : ''}`}>
               <div>
-                <div className="font-semibold">{s.label}</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{s.label}</span>
+                  {s.disabled && (
+                    <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700">
+                      disabled
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-gray-500 mt-0.5">{s.desc}</div>
+                {s.disabled && (
+                  <p className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 mt-2">
+                    Temporarily disabled — pending verification.
+                  </p>
+                )}
               </div>
 
               {/* Last DB log */}
@@ -132,9 +147,11 @@ export default function ScrapersPage() {
 
               <button
                 onClick={() => triggerScraper(s.id)}
-                disabled={!!running}
+                disabled={!!running || s.disabled}
                 className={`mt-auto rounded px-4 py-2 text-sm font-medium transition-colors
-                  ${isRunning
+                  ${s.disabled
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : isRunning
                     ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                     : 'bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40'
                   }`}
@@ -144,7 +161,7 @@ export default function ScrapersPage() {
                     <span className="inline-block h-3 w-3 rounded-full border-2 border-white border-t-transparent animate-spin" />
                     Running…
                   </span>
-                ) : 'Run now'}
+                ) : s.disabled ? 'Disabled' : 'Run now'}
               </button>
             </div>
           )

@@ -26,8 +26,9 @@ export async function POST(req: NextRequest) {
   const ran_at = new Date().toISOString()
   const results: Array<Record<string, unknown>> = []
 
+  // ChurningCanada temporarily disabled — pending data verification.
+  // To re-enable: add `new ChurningCanadaScraper(),` back here.
   const scrapers = [
-    new ChurningCanadaScraper(),
     new MintFlyingScraper(),
     new PrinceOfTravelScraper(),
   ]

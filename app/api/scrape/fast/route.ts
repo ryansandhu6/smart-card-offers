@@ -1,6 +1,7 @@
 // app/api/scrape/fast/route.ts
-// POST /api/scrape/fast — fast daily scrape (~30 seconds).
-// Runs: churningcanada (SHA-gated).
+// POST /api/scrape/fast — fast daily scrape.
+// ChurningCanada is temporarily disabled (pending verification) — this route
+// is currently a no-op but kept so the cron slot is preserved for re-enabling.
 // Triggered by Vercel cron at 06:00 UTC daily.
 // Protected by Authorization: Bearer {CRON_SECRET}.
 
@@ -23,9 +24,10 @@ export async function POST(req: NextRequest) {
   const ran_at = new Date().toISOString()
   const results: Array<Record<string, unknown>> = []
 
-  const scrapers = [
-    new ChurningCanadaScraper(),
-  ]
+  // ChurningCanada temporarily disabled — pending data verification.
+  // To re-enable: uncomment the line below and restore the import.
+  // new ChurningCanadaScraper(),
+  const scrapers: InstanceType<typeof ChurningCanadaScraper>[] = []
 
   for (const scraper of scrapers) {
     try {
