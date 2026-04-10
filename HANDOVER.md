@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-04-06 (migrations 011–035: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup, monthly bonus fields, scraper safety hardening, offer archival on approve, priority inversion fix)
+> Last updated: 2026-04-09 (migrations 011–044: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup, monthly bonus fields, scraper safety hardening, offer archival on approve, priority inversion fix, source_name tracking, referral URL, offer review queue polish, FX/income fields, interest rates, card detail tables — insurance, earn rates, transfer partners, credits, lounge access)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -1455,3 +1455,170 @@ The following 15 cards were set `is_active = false` (no active offers existed fo
 2. **Admin UI** — interface for editing card/offer content without touching the DB directly
 3. **Offer description cleanup** — script to generate clean `details` summaries for sparse/scraped offer text; same pattern as `generate-card-content.ts`
 - Track apply clicks by calling `POST /api/track-click` before redirecting to the card's apply URL (see [Section 5](#5-api-endpoints))
+
+---
+
+## 15. Session Summary — 2026-04-09 (Migrations 036–044)
+
+### Overview
+
+This session hardened the data pipeline (review queue filtering, scraper scheduling, logging cleanup), added five new card detail tables populated by the scrapers, and polished the public API to expose all new fields.
+
+---
+
+### Migrations Applied
+
+| # | File | What Changed |
+|---|------|-------------|
+| 036 | `036_income_fields.sql` | Added `minimum_household_income INTEGER` to `credit_cards` (personal `min_income` already existed) |
+| 037 | `037_review_reason.sql` | Added `review_reason TEXT` to `card_offers` — explains why an offer entered the review queue (`new_card`, `new_offer`, `higher_bonus`, `updated_terms`, `lower_priority_source`) |
+| 038 | `038_content_source.sql` | Added `content_source TEXT` to both `credit_cards` and `card_offers` — tracks origin of headline/description: `manual`, `ai_generated`, `scraper`, or NULL |
+| 039 | `039_card_insurance.sql` | New table `card_insurance (card_id, coverage_type, maximum, details, source_priority, scraped_at)` — unique on `(card_id, coverage_type)` |
+| 040 | `040_card_earn_rates.sql` | New table `card_earn_rates (card_id, category, rate, rate_text, source_priority, scraped_at)` — unique on `(card_id, category)` |
+| 041 | `041_card_transfer_partners.sql` | New table `card_transfer_partners (card_id, partner_name, transfer_ratio, transfer_time, alliance, best_for, source_priority, scraped_at)` — unique on `(card_id, partner_name)` |
+| 042 | `042_card_credits.sql` | New table `card_credits (card_id, credit_type, amount, description, frequency, source_priority, scraped_at)` — unique on `(card_id, credit_type)` |
+| 043 | `043_card_lounge_access.sql` | New table `card_lounge_access (card_id, network, visits_per_year, guest_policy, details, source_priority, scraped_at)` — unique on `(card_id, network)` |
+| 044 | `044_interest_rates.sql` | Added `purchase_rate`, `cash_advance_rate`, `balance_transfer_rate NUMERIC(5,2)` to `credit_cards` |
+
+All five new tables have RLS enabled with a public SELECT policy so the API can read them via the anon key.
+
+---
+
+### Scraper Changes
+
+**Priority hierarchy (final):**
+
+| Priority | Scraper | Trust level |
+|---|---|---|
+| 1 | Prince of Travel | Highest — individual card pages, richest data |
+| 2 | MintFlying | High — structured RSC JSON, verified data |
+| 3 | ChurningCanada | Community — disabled (scraper exists, not running) |
+| 4 | RateHub, others | Aggregator — lowest trust |
+
+Lower number = higher trust. A higher-numbered source will never overwrite a lower-numbered source's content; it can only heartbeat (`last_seen_at`).
+
+**PoT scraper now extracts and saves:**
+- `card_insurance` — from "Insurance Coverage" table (COVERAGE / MAXIMUM / DETAILS)
+- `card_earn_rates` — from "Earning Rewards" table (CATEGORY / RATE), preserving raw `rate_text`
+- `card_transfer_partners` — from "Transfer Partners" table (PARTNER / RATIO / TRANSFER TIME)
+- `credit_cards.purchase_rate`, `cash_advance_rate`, `balance_transfer_rate` — from "Interest Rates" section (null-guarded writes)
+
+**MintFlying scraper now extracts and saves:**
+- `card_earn_rates` — from `earnRates` RSC JSON field (priority-guarded; won't overwrite PoT data)
+- `card_transfer_partners` — from `transferPartners` / `rewardPartners` RSC fields
+- `card_credits` — from `travelCredits` / `credits` / `benefits` RSC fields
+- `card_lounge_access` — from `loungeAccess` RSC field (handles boolean, string, or array)
+
+**Priority guard for detail tables:** All five tables use a shared `priorityGuardedUpsert()` function in `lib/supabase.ts`. Before writing each row, it checks the existing `source_priority` for that `(card_id, key)` pair — only upserts if no existing row with a lower priority number exists. PoT (1) always wins over MintFlying (2).
+
+**Scraper schedule changed to weekly:**
+- Both `fast` and `deep` scrapers now run on **Sunday 06:00 UTC = Saturday 10:00 PM PST**
+- Changed in `vercel.json`: `"0 6 * * *"` → `"0 6 * * 0"` (fast), `"0 7 * * 0"` (deep, staggered 1h)
+- Manual "Run now" button in admin UI is unaffected
+
+---
+
+### Public API Changes
+
+**Pending-review offers filtered from all public endpoints:**
+
+All three public endpoints (`/api/cards`, `/api/cards/:slug`, `/api/offers`) now filter `card_offers` to `review_status = 'approved'` only. Previously only `is_active = true` was checked. This was the root cause of duplicate pending offers appearing on the frontend (the BMO Eclipse Visa Infinite Privilege showed two offers — one pending).
+
+**Important for frontend developers:** You do NOT need to filter by `review_status` in the frontend. The API handles this. Only approved, active offers ever appear in API responses.
+
+**Cards with only pending offers are excluded:** Because `review_status = 'approved'` is applied as a PostgREST inner-join filter on the nested `card_offers`, cards that have zero approved offers are excluded from `/api/cards` results entirely.
+
+**New nested arrays on all card responses:**
+
+All card endpoints (`/api/cards`, `/api/cards/:slug`, `/api/offers` card objects) now include:
+
+```json
+{
+  "insurance": [
+    { "coverage_type": "Travel Medical", "maximum": "$5,000,000", "details": "Up to 15 days per trip" }
+  ],
+  "earn_rates": [
+    { "category": "Groceries", "rate": 3.0, "rate_text": "3 points per $1" },
+    { "category": "All other purchases", "rate": 1.0, "rate_text": "1 point per $1" }
+  ],
+  "transfer_partners": [
+    { "partner_name": "Air Canada Aeroplan", "transfer_ratio": "1:1", "transfer_time": "Instant", "alliance": null, "best_for": null }
+  ],
+  "credits": [
+    { "credit_type": "travel_credit", "amount": 100.00, "description": "$100 travel credit annually", "frequency": "annual" }
+  ],
+  "lounge_access": [
+    { "network": "Priority Pass", "visits_per_year": null, "guest_policy": "2 free guests per visit", "details": null }
+  ]
+}
+```
+
+All five arrays will be empty (`[]`) for cards that haven't been scraped yet. Treat them as nullable arrays on the frontend.
+
+**New offer fields now included in responses:**
+- `review_reason` — why the offer was flagged for review (informational; always null for approved offers in practice)
+- `content_source` — origin of the headline: `manual`, `ai_generated`, `scraper`, or null
+
+**New card-level fields now populated by scrapers:**
+- `foreign_transaction_fee` — `NUMERIC(5,2)`, e.g. `2.5` for 2.5%, `0` for no FX fee
+- `min_income` — personal minimum income in CAD (integer)
+- `minimum_household_income` — household minimum income in CAD (integer)
+- `purchase_rate`, `cash_advance_rate`, `balance_transfer_rate` — APRs as percentages (e.g. `20.99`)
+
+---
+
+### Admin & Dashboard Changes
+
+**Review queue improvements:**
+- `review_reason` badges shown per offer (`new_card`, `new_offer`, `higher_bonus`, `updated_terms`, `lower_priority_source`)
+- Merge flow with side-by-side offer comparison before approving
+- Activate conflict warnings when approving an offer that would conflict with an existing active offer
+
+**Dashboard offer counts:**
+- Active offer count now shows: "X cards with offers / Y total offers" (previously just total offer count)
+- "Cards needing attention" section now distinguishes: "no active offers" vs "offers pending review" — different action required for each
+
+**Debug logging cleaned up:**
+- Removed non-error `console.log` calls from application code (kept all API error catches and scraper operational logging)
+- All `scripts/*.ts` files retain console output — they are CLI tools where output is intentional
+
+**AI content generation:**
+- `scripts/ai-generate-content.ts` added — generates `short_description` for cards and polishes `headline` for offers
+- `content_source` field tracks whether content is `manual`, `ai_generated`, or `scraper`-origin — AI script never overwrites `manual` content
+
+---
+
+### Architecture Notes
+
+**`lib/supabase.ts` — new exports:**
+- `upsertCardInsurance(cardId, rows, sourcePriority)`
+- `upsertCardEarnRates(cardId, rows, sourcePriority)`
+- `upsertCardTransferPartners(cardId, rows, sourcePriority)`
+- `upsertCardCredits(cardId, rows, sourcePriority)`
+- `upsertCardLoungeAccess(cardId, rows, sourcePriority)`
+
+All five share a single `priorityGuardedUpsert<T>()` generic helper.
+
+**`lib/scraper-base.ts` — extended save pipeline:**
+Extended data writes run in `saveOffer()` immediately after `card_id` is resolved — before offer validation. This means insurance/earn-rate data is saved even when the offer itself is skipped (e.g. no bonus value, headline too short). The writes happen via the five new upsert helpers above.
+
+**`types/index.ts` — `ScrapedOffer` additions:**
+```ts
+insurance_rows?:        Array<{ coverage_type, maximum?, details? }>
+earn_rate_rows?:        Array<{ category, rate, rate_text }>
+transfer_partner_rows?: Array<{ partner_name, transfer_ratio?, transfer_time?, alliance?, best_for? }>
+credit_rows?:           Array<{ credit_type, amount?, description?, frequency? }>
+lounge_access_rows?:    Array<{ network, visits_per_year?, guest_policy?, details? }>
+card_purchase_rate?:    number
+card_cash_advance_rate?: number
+card_balance_transfer_rate?: number
+```
+
+---
+
+### Remaining TODOs
+
+1. **Populate detail tables** — run a manual PoT + MintFlying scrape from the admin UI to seed `card_insurance`, `card_earn_rates`, `card_transfer_partners`, `card_credits`, `card_lounge_access` for the first time
+2. **Frontend integration** — surface the new nested arrays (insurance, earn rates, transfer partners, credits, lounge access) in the card detail page UI
+3. **ChurningCanada re-enable** — scraper is written and working but disabled; re-enable once data quality is confirmed
+4. **Tier boundaries** — corrected in this session; verify the UI tier filter labels match the updated ranges

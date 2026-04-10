@@ -58,11 +58,18 @@ export async function getCards(filters?: {
         is_limited_time, expires_at, is_verified,
         source_priority, last_seen_at, confidence_score,
         is_monthly_bonus, monthly_points_value, monthly_spend_requirement,
-        monthly_cashback_value, bonus_months, start_month
-      )
+        monthly_cashback_value, bonus_months, start_month,
+        review_reason, content_source
+      ),
+      insurance:card_insurance(coverage_type, maximum, details),
+      earn_rates:card_earn_rates(category, rate, rate_text),
+      transfer_partners:card_transfer_partners(partner_name, transfer_ratio, transfer_time, alliance, best_for),
+      credits:card_credits(credit_type, amount, description, frequency),
+      lounge_access:card_lounge_access(network, visits_per_year, guest_policy, details)
     `, { count: 'exact' })
     .eq('is_active', true)
     .eq('card_offers.is_active', true)
+    .eq('card_offers.review_status', 'approved')
     .order('is_featured', { ascending: false })
     .range(offset, offset + pageSize - 1)
 
@@ -124,12 +131,19 @@ export async function searchCards(
         is_limited_time, expires_at, is_verified,
         source_priority, last_seen_at, confidence_score,
         is_monthly_bonus, monthly_points_value, monthly_spend_requirement,
-        monthly_cashback_value, bonus_months, start_month
-      )
+        monthly_cashback_value, bonus_months, start_month,
+        review_reason, content_source
+      ),
+      insurance:card_insurance(coverage_type, maximum, details),
+      earn_rates:card_earn_rates(category, rate, rate_text),
+      transfer_partners:card_transfer_partners(partner_name, transfer_ratio, transfer_time, alliance, best_for),
+      credits:card_credits(credit_type, amount, description, frequency),
+      lounge_access:card_lounge_access(network, visits_per_year, guest_policy, details)
     `)
     .in('id', ids)
     .eq('is_active', true)
     .eq('card_offers.is_active', true)
+    .eq('card_offers.review_status', 'approved')
 
   // Apply the same optional filters as getCards()
   if (filters?.is_featured)  query = query.eq('is_featured', true)
@@ -164,9 +178,18 @@ export async function getActiveOffers(limitedTimeOnly = false, page = 1, limit =
     .from('card_offers')
     .select(`
       *,
-      card:credit_cards(*, issuer:issuers(*))
+      card:credit_cards(
+        *,
+        issuer:issuers(*),
+        insurance:card_insurance(coverage_type, maximum, details),
+        earn_rates:card_earn_rates(category, rate, rate_text),
+        transfer_partners:card_transfer_partners(partner_name, transfer_ratio, transfer_time, alliance, best_for),
+        credits:card_credits(credit_type, amount, description, frequency),
+        lounge_access:card_lounge_access(network, visits_per_year, guest_policy, details)
+      )
     `, { count: 'exact' })
     .eq('is_active', true)
+    .eq('review_status', 'approved')
     // Best verified bank-direct offers first, then highest points/cashback within each tier
     .order('source_priority', { ascending: true })
     .order('points_value',    { ascending: false, nullsFirst: false })
@@ -343,4 +366,83 @@ export async function getOfferHistoryStats(
     })
   }
   return map
+}
+
+// -----------------------------------------------
+// Card detail table upserts
+// All use a priority guard: a row is only written/updated when no existing row
+// has a lower priority number (= higher trust). Lower number = higher trust.
+// -----------------------------------------------
+
+type InsuranceRow       = { coverage_type: string; maximum?: string; details?: string }
+type EarnRateRow        = { category: string; rate: number; rate_text: string }
+type TransferPartnerRow = { partner_name: string; transfer_ratio?: string; transfer_time?: string; alliance?: string; best_for?: string }
+type CreditRow          = { credit_type: string; amount?: number; description?: string; frequency?: string }
+type LoungeAccessRow    = { network: string; visits_per_year?: number; guest_policy?: string; details?: string }
+
+async function priorityGuardedUpsert<T extends Record<string, unknown>>(
+  table: string,
+  cardId: string,
+  keyColumn: string,
+  rows: T[],
+  sourcePriority: number
+): Promise<void> {
+  if (!rows.length) return
+  const now = new Date().toISOString()
+
+  // Fetch existing rows to check source_priority per key
+  const { data: existing, error: selectErr } = await supabaseAdmin
+    .from(table)
+    .select(`${keyColumn}, source_priority`)
+    .eq('card_id', cardId)
+
+  if (selectErr) {
+    console.warn(`[supabase] ${table} select error: ${selectErr.message}`)
+    return
+  }
+
+  const existingMap = new Map(
+    (existing ?? []).map((r: any) => [String(r[keyColumn]).toLowerCase(), r.source_priority as number])
+  )
+
+  const toUpsert = rows.filter(r => {
+    const key = String(r[keyColumn]).toLowerCase()
+    const existingPriority = existingMap.get(key)
+    // Write if: no existing row, or existing row has same or lower trust (higher number)
+    return existingPriority == null || existingPriority >= sourcePriority
+  })
+  if (!toUpsert.length) return
+
+  const records = toUpsert.map(r => ({
+    card_id: cardId,
+    ...r,
+    source_priority: sourcePriority,
+    scraped_at: now,
+  }))
+
+  console.log(`[supabase] ${table} upserting ${records.length} rows for card ${cardId}`)
+  const { error } = await supabaseAdmin
+    .from(table)
+    .upsert(records, { onConflict: `card_id,${keyColumn}` })
+  if (error) console.warn(`[supabase] ${table} upsert error: ${error.message} | code: ${error.code} | hint: ${error.hint ?? '-'}`)
+}
+
+export async function upsertCardInsurance(cardId: string, rows: InsuranceRow[], sourcePriority: number): Promise<void> {
+  await priorityGuardedUpsert('card_insurance', cardId, 'coverage_type', rows, sourcePriority)
+}
+
+export async function upsertCardEarnRates(cardId: string, rows: EarnRateRow[], sourcePriority: number): Promise<void> {
+  await priorityGuardedUpsert('card_earn_rates', cardId, 'category', rows, sourcePriority)
+}
+
+export async function upsertCardTransferPartners(cardId: string, rows: TransferPartnerRow[], sourcePriority: number): Promise<void> {
+  await priorityGuardedUpsert('card_transfer_partners', cardId, 'partner_name', rows, sourcePriority)
+}
+
+export async function upsertCardCredits(cardId: string, rows: CreditRow[], sourcePriority: number): Promise<void> {
+  await priorityGuardedUpsert('card_credits', cardId, 'credit_type', rows, sourcePriority)
+}
+
+export async function upsertCardLoungeAccess(cardId: string, rows: LoungeAccessRow[], sourcePriority: number): Promise<void> {
+  await priorityGuardedUpsert('card_lounge_access', cardId, 'network', rows, sourcePriority)
 }

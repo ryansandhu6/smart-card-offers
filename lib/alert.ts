@@ -19,7 +19,6 @@ export async function sendAlert(subject: string, details: string): Promise<void>
       subject: `[Smart Card Offers Alert] ${subject}`,
       html: `<pre style="font-family:monospace;white-space:pre-wrap;font-size:13px">${details}</pre>`,
     })
-    console.log(`[alert] Sent alert: ${subject}`)
   } catch (err) {
     console.error(`[alert] Failed to send alert email "${subject}":`, err)
   }

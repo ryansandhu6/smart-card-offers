@@ -1,7 +1,7 @@
 {
   "crons": [
-    { "path": "/api/scrape/fast", "schedule": "0 6 * * *" },
-    { "path": "/api/scrape/deep", "schedule": "0 7 * * *" }
+    { "path": "/api/scrape/fast", "schedule": "0 6 * * 0" },
+    { "path": "/api/scrape/deep", "schedule": "0 7 * * 0" }
   ],
   "headers": [
     {

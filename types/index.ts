@@ -150,6 +150,50 @@ export interface ScrapedOffer {
   // cards ahead of time (e.g. ChurningCanadaScraper) so they can enforce
   // "never create new card rows" without overriding the full save pipeline.
   _card_id?: string
+
+  // ── Extended card detail tables ──────────────────────────────────────────
+  // When present, BaseScraper.saveOffer() upserts these into their respective
+  // tables after resolving the card_id.  Priority guard applied per-row:
+  // a row is only written when no existing row with a lower priority number exists.
+
+  insurance_rows?: Array<{
+    coverage_type: string
+    maximum?: string
+    details?: string
+  }>
+
+  earn_rate_rows?: Array<{
+    category: string
+    rate: number
+    rate_text: string
+  }>
+
+  transfer_partner_rows?: Array<{
+    partner_name: string
+    transfer_ratio?: string
+    transfer_time?: string
+    alliance?: string
+    best_for?: string
+  }>
+
+  credit_rows?: Array<{
+    credit_type: string
+    amount?: number
+    description?: string
+    frequency?: string
+  }>
+
+  lounge_access_rows?: Array<{
+    network: string
+    visits_per_year?: number
+    guest_policy?: string
+    details?: string
+  }>
+
+  // Interest rates → written to credit_cards (null-guarded, same as other card-level fields)
+  card_purchase_rate?: number
+  card_cash_advance_rate?: number
+  card_balance_transfer_rate?: number
 }
 
 export interface ScrapedMortgageRate {

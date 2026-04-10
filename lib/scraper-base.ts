@@ -1,7 +1,11 @@
 // lib/scraper-base.ts
 // Base class all card scrapers extend. Handles logging, timing, error recovery.
 
-import { supabaseAdmin, logScrape, logOfferHistory, markExpiredOffersInactive } from './supabase'
+import {
+  supabaseAdmin, logScrape, logOfferHistory, markExpiredOffersInactive,
+  upsertCardInsurance, upsertCardEarnRates, upsertCardTransferPartners,
+  upsertCardCredits, upsertCardLoungeAccess,
+} from './supabase'
 import type { ScrapedOffer, ScrapedMortgageRate, ScrapeResult } from '../types'
 
 // -----------------------------------------------
@@ -268,6 +272,37 @@ export abstract class BaseScraper {
         card_id = ensured.id
         isNewCard = ensured.isNew
       }
+    }
+
+    // ── Extended card detail tables ────────────────────────────────────────
+    // Written after card_id is resolved — runs even if the offer itself is later
+    // skipped. Priority guard enforced inside each upsert function.
+    {
+      const p = offer.sourcePriority ?? this.sourcePriority
+      const cn = offer.card_name   // shorthand for log lines
+
+      console.log(`[${this.name}] detail-tables "${cn}": insurance=${offer.insurance_rows?.length ?? 0} earn_rates=${offer.earn_rate_rows?.length ?? 0} transfer_partners=${offer.transfer_partner_rows?.length ?? 0} credits=${offer.credit_rows?.length ?? 0} lounge_access=${offer.lounge_access_rows?.length ?? 0} purchase_rate=${offer.card_purchase_rate ?? '-'} cash_advance=${offer.card_cash_advance_rate ?? '-'} balance_transfer=${offer.card_balance_transfer_rate ?? '-'}`)
+
+      if (offer.insurance_rows?.length)
+        await upsertCardInsurance(card_id, offer.insurance_rows, p)
+      if (offer.earn_rate_rows?.length)
+        await upsertCardEarnRates(card_id, offer.earn_rate_rows, p)
+      if (offer.transfer_partner_rows?.length)
+        await upsertCardTransferPartners(card_id, offer.transfer_partner_rows, p)
+      if (offer.credit_rows?.length)
+        await upsertCardCredits(card_id, offer.credit_rows, p)
+      if (offer.lounge_access_rows?.length)
+        await upsertCardLoungeAccess(card_id, offer.lounge_access_rows, p)
+      // Interest rates → null-guarded writes to credit_cards
+      if (offer.card_purchase_rate != null)
+        await supabaseAdmin.from('credit_cards').update({ purchase_rate: offer.card_purchase_rate })
+          .eq('id', card_id).is('purchase_rate', null)
+      if (offer.card_cash_advance_rate != null)
+        await supabaseAdmin.from('credit_cards').update({ cash_advance_rate: offer.card_cash_advance_rate })
+          .eq('id', card_id).is('cash_advance_rate', null)
+      if (offer.card_balance_transfer_rate != null)
+        await supabaseAdmin.from('credit_cards').update({ balance_transfer_rate: offer.card_balance_transfer_rate })
+          .eq('id', card_id).is('balance_transfer_rate', null)
     }
 
     // ── Post-resolution validation ──────────────────────────────────────────

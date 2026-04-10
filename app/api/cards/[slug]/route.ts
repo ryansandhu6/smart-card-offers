@@ -25,12 +25,19 @@ export async function GET(
           is_verified, source_priority, last_seen_at,
           confidence_score, source_url, scraped_at,
           is_monthly_bonus, monthly_points_value, monthly_spend_requirement,
-          monthly_cashback_value, bonus_months, start_month
-        )
+          monthly_cashback_value, bonus_months, start_month,
+          review_reason, content_source
+        ),
+        insurance:card_insurance(coverage_type, maximum, details),
+        earn_rates:card_earn_rates(category, rate, rate_text),
+        transfer_partners:card_transfer_partners(partner_name, transfer_ratio, transfer_time, alliance, best_for),
+        credits:card_credits(credit_type, amount, description, frequency),
+        lounge_access:card_lounge_access(network, visits_per_year, guest_policy, details)
       `)
       .eq('slug', slug)
       .eq('is_active', true)
       .eq('card_offers.is_active', true)
+      .eq('card_offers.review_status', 'approved')
       .maybeSingle()
 
     if (error) throw error
