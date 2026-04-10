@@ -272,9 +272,10 @@ export class MintFlyingScraper extends BaseScraper {
       ? undefined
       : Number(card.householdIncome)
 
-    // ── Earn-rate multipliers ─────────────────────────────────────────────────
+    // ── Earn-rate multipliers + earn_rate_rows ────────────────────────────────
     // earnRates: [{category: "Air Canada", rate: "2 Aeroplan points per $1"}, ...]
     const earn_rate_multipliers: Record<string, number> = {}
+    const earn_rate_rows: NonNullable<ScrapedOffer['earn_rate_rows']> = []
     for (const er of (card.earnRates ?? []) as Array<{category: string; rate: string}>) {
       const rateMatch = er.rate?.match(/(\d+(?:\.\d+)?)\s*(?:points?|miles?|MR|%)?\s*per\s*\$1/i)
         ?? er.rate?.match(/^(\d+(?:\.\d+)?)\s*[x×]/i)
@@ -287,12 +288,75 @@ export class MintFlyingScraper extends BaseScraper {
         .trim()
         .replace(/\s+/g, '_')
         .slice(0, 30)
-      if (cat && !earn_rate_multipliers[cat]) earn_rate_multipliers[cat] = rate
+      if (cat && !earn_rate_multipliers[cat]) {
+        earn_rate_multipliers[cat] = rate
+        earn_rate_rows.push({ category: er.category, rate, rate_text: er.rate })
+      }
+    }
+
+    // ── Transfer partners ─────────────────────────────────────────────────────
+    const transfer_partner_rows: NonNullable<ScrapedOffer['transfer_partner_rows']> = []
+    const rawPartners: any[] = Array.isArray(card.transferPartners) ? card.transferPartners
+      : Array.isArray(card.rewardPartners) ? card.rewardPartners : []
+    for (const p of rawPartners) {
+      const partner_name = String(p.name ?? p.partner ?? p.programName ?? '').trim()
+      if (!partner_name) continue
+      transfer_partner_rows.push({
+        partner_name,
+        transfer_ratio: p.transferRatio ?? p.ratio ?? undefined,
+        transfer_time:  p.transferTime  ?? p.time  ?? undefined,
+        alliance:       p.alliance      ?? undefined,
+        best_for:       p.bestFor       ?? p.best_for ?? undefined,
+      })
+    }
+
+    // ── Credits (travel credits, NEXUS, dining, etc.) ─────────────────────────
+    const credit_rows: NonNullable<ScrapedOffer['credit_rows']> = []
+    const rawCredits: any[] = Array.isArray(card.travelCredits) ? card.travelCredits
+      : Array.isArray(card.credits) ? card.credits
+      : Array.isArray(card.benefits) ? card.benefits : []
+    for (const c of rawCredits) {
+      const description = String(c.description ?? c.name ?? c.title ?? c.label ?? '').trim()
+      if (!description) continue
+      // Derive a stable credit_type slug from the description
+      const credit_type = description
+        .toLowerCase()
+        .replace(/\$[\d,]+\s*/g, '')
+        .replace(/[^a-z\s]/g, '')
+        .trim()
+        .replace(/\s+/g, '_')
+        .slice(0, 50) || 'travel_credit'
+      const amountMatch = description.match(/\$([\d,]+)/)
+      const amount      = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : (c.amount ? Number(c.amount) : undefined)
+      const frequency   = /monthly/i.test(description) ? 'monthly'
+        : /annual|yearly/i.test(description) ? 'annual'
+        : /once|one.time/i.test(description) ? 'once' : undefined
+      credit_rows.push({ credit_type, amount, description, frequency })
+    }
+
+    // ── Lounge access ─────────────────────────────────────────────────────────
+    const lounge_access_rows: NonNullable<ScrapedOffer['lounge_access_rows']> = []
+    if (Array.isArray(card.loungeAccess)) {
+      for (const l of card.loungeAccess as any[]) {
+        const network = String(l.network ?? l.name ?? l.program ?? '').trim()
+        if (!network) continue
+        lounge_access_rows.push({
+          network,
+          visits_per_year: l.visitsPerYear ?? l.visits_per_year ?? undefined,
+          guest_policy:    l.guestPolicy   ?? l.guest_policy    ?? undefined,
+          details:         l.details       ?? l.description     ?? undefined,
+        })
+      }
+    } else if (typeof card.loungeAccess === 'string' && card.loungeAccess.trim()) {
+      lounge_access_rows.push({ network: card.loungeAccess.trim() })
+    } else if (card.loungeAccess === true) {
+      const network = String(card.airportLoungeNetwork ?? card.loungeNetwork ?? '').trim() || 'Lounge Access'
+      lounge_access_rows.push({ network })
     }
 
     // ── Feature tags → extra_perks ────────────────────────────────────────────
     const tags: string[] = Array.isArray(card.tags) ? card.tags : []
-    if (card.loungeAccess === true && !tags.includes('Lounge Access')) tags.push('Lounge Access')
+    if (lounge_access_rows.length > 0 && !tags.includes('Lounge Access')) tags.push('Lounge Access')
 
     return {
       card_name: cardName,
@@ -317,6 +381,11 @@ export class MintFlyingScraper extends BaseScraper {
       card_foreign_transaction_fee,
       card_min_income,
       card_min_household_income,
+      // Extended detail tables
+      earn_rate_rows:        earn_rate_rows.length        ? earn_rate_rows        : undefined,
+      transfer_partner_rows: transfer_partner_rows.length ? transfer_partner_rows : undefined,
+      credit_rows:           credit_rows.length           ? credit_rows           : undefined,
+      lounge_access_rows:    lounge_access_rows.length    ? lounge_access_rows    : undefined,
     }
   }
 
@@ -719,26 +788,113 @@ export class PrinceOfTravelScraper extends BaseScraper {
       card_foreign_transaction_fee = 0
     }
 
+    // ── Insurance coverage table ──────────────────────────────────────────
+    // PoT actual headers (all-caps in HTML, lowercased here): COVERAGE | MAXIMUM | DETAILS
+    const insurance_rows: NonNullable<ScrapedOffer['insurance_rows']> = []
+    $('table').each((_, table) => {
+      const $table = $(table)
+      const headers = $table.find('tr').first().find('th, td')
+        .map((_, th) => $(th).text().trim().toLowerCase()).get()
+      // Exact match on "coverage" (PoT) with broad fallback for other sites.
+      const covIdx = headers.findIndex(h => h === 'coverage' || /\bcoverage type\b|\binsurance\b/i.test(h))
+      if (covIdx === -1) return
+      // Skip earn-rate, transfer-partner, and fee tables.
+      if (headers.some(h => /\bcategory\b|\bpartner\b|\bratio\b|\bpoints per\b/i.test(h))) return
+      const maxIdx = headers.findIndex(h => h === 'maximum' || /^max\b|^amount|^limit/i.test(h))
+      const detIdx = headers.findIndex(h => h === 'details' || /^detail|^description|^note/i.test(h))
+
+      $table.find('tr').slice(1).each((_, tr) => {
+        const cells = $(tr).find('td, th').map((_, td) => $(td).text().replace(/\s+/g, ' ').trim()).get()
+        const coverage_type = cells[covIdx]
+        if (!coverage_type || coverage_type.length < 3) return
+        insurance_rows.push({
+          coverage_type,
+          maximum: maxIdx !== -1 ? cells[maxIdx] || undefined : undefined,
+          details: detIdx !== -1 ? cells[detIdx] || undefined : undefined,
+        })
+      })
+    })
+
+    // ── Transfer partners table ───────────────────────────────────────────
+    // PoT actual headers: PARTNER | RATIO | TRANSFER TIME
+    // Section: "Redeeming Rewards" → sub-heading "TRANSFER PARTNERS"
+    const transfer_partner_rows: NonNullable<ScrapedOffer['transfer_partner_rows']> = []
+    $('table').each((_, table) => {
+      const $table = $(table)
+      const headers = $table.find('tr').first().find('th, td')
+        .map((_, th) => $(th).text().trim().toLowerCase()).get()
+      // Exact match on "partner" (PoT) with broad fallback.
+      const partnerIdx = headers.findIndex(h => h === 'partner' || /\bpartner\b|\bprogram\b/i.test(h))
+      if (partnerIdx === -1) return
+      // Skip insurance, earn-rate, and fee tables.
+      if (headers.some(h => /coverage|insurance|\bcategory\b|annual\s*fee|interest/i.test(h))) return
+      // Use exact "ratio" match first to avoid hitting "transfer time" column.
+      const ratioIdx = headers.findIndex(h => h === 'ratio' || /^transfer ratio$/i.test(h))
+      const timeIdx  = headers.findIndex(h => /transfer\s*time|^time$/i.test(h))
+
+      $table.find('tr').slice(1).each((_, tr) => {
+        const cells = $(tr).find('td, th').map((_, td) => $(td).text().replace(/\s+/g, ' ').trim()).get()
+        const partner_name = cells[partnerIdx]
+        if (!partner_name || partner_name.length < 2) return
+        transfer_partner_rows.push({
+          partner_name,
+          transfer_ratio: ratioIdx !== -1 ? cells[ratioIdx] || undefined : undefined,
+          transfer_time:  timeIdx  !== -1 ? cells[timeIdx]  || undefined : undefined,
+        })
+      })
+    })
+
+    // ── Interest rates ────────────────────────────────────────────────────
+    let card_purchase_rate: number | undefined
+    let card_cash_advance_rate: number | undefined
+    let card_balance_transfer_rate: number | undefined
+
+    $('table tr').each((_, tr) => {
+      const cells = $(tr).find('td, th').map((_, td) => $(td).text().replace(/\s+/g, ' ').trim()).get()
+      if (cells.length < 2) return
+      const label = cells[0].toLowerCase()
+      const value = cells.slice(1).join(' ')
+      const rateMatch = value.match(/([\d.]+)\s*%/)
+      if (!rateMatch) return
+      const rate = parseFloat(rateMatch[1])
+      if (rate <= 0 || rate > 100) return
+
+      if (/purchase|standard/i.test(label) && !/cash|balance/i.test(label) && card_purchase_rate == null)
+        card_purchase_rate = rate
+      else if (/cash\s*advance/i.test(label) && card_cash_advance_rate == null)
+        card_cash_advance_rate = rate
+      else if (/balance\s*transfer/i.test(label) && card_balance_transfer_rate == null)
+        card_balance_transfer_rate = rate
+    })
+
     // ── Earn-rate multipliers ─────────────────────────────────────────────
     const earn_rate_multipliers: Record<string, number> = {}
+    const earn_rate_rows: NonNullable<ScrapedOffer['earn_rate_rows']> = []
 
     // Strategy A: Earning Rewards table (CATEGORY / RATE columns)
+    // PoT actual headers: CATEGORY | RATE | CAP | AFTER CAP
     $('table').each((_, table) => {
       const $table = $(table)
       const headerCells = $table.find('tr').first().find('th, td').map((_, th) => $(th).text().trim().toLowerCase()).get()
-      const catIdx = headerCells.findIndex(h => /category|type|description/i.test(h))
-      const rateIdx = headerCells.findIndex(h => /rate|earn|point|multiple/i.test(h))
+      // Exact match on "category" and "rate" (PoT) with broad fallback.
+      const catIdx  = headerCells.findIndex(h => h === 'category' || /^category\b/i.test(h))
+      const rateIdx = headerCells.findIndex(h => h === 'rate'     || /^rate\b/i.test(h))
       if (catIdx === -1 || rateIdx === -1) return
+      // Skip insurance and transfer-partner tables that accidentally have these columns.
+      if (headerCells.some(h => /coverage|insurance|\bpartner\b|\bratio\b/i.test(h))) return
 
       $table.find('tr').slice(1).each((_, tr) => {
         const cells = $(tr).find('td').map((_, td) => $(td).text().replace(/\s+/g, ' ').trim()).get()
         if (!cells[catIdx] || !cells[rateIdx]) return
-        const category = cells[catIdx].toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '').replace(/_+/g, '_')
-        const rateMatch = cells[rateIdx].match(/(\d+(?:\.\d+)?)/)
-        if (rateMatch && category && category.length >= 3) {
+        const category    = cells[catIdx].trim()
+        const rate_text   = cells[rateIdx].trim()
+        const slugCategory = category.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '').replace(/_+/g, '_')
+        const rateMatch = rate_text.match(/(\d+(?:\.\d+)?)/)
+        if (rateMatch && slugCategory && slugCategory.length >= 3) {
           const rate = parseFloat(rateMatch[1])
-          if (rate >= 1 && rate <= 30 && !earn_rate_multipliers[category]) {
-            earn_rate_multipliers[category] = rate
+          if (rate >= 1 && rate <= 30 && !earn_rate_multipliers[slugCategory]) {
+            earn_rate_multipliers[slugCategory] = rate
+            earn_rate_rows.push({ category, rate, rate_text })
           }
         }
       })
@@ -753,9 +909,11 @@ export class PrinceOfTravelScraper extends BaseScraper {
         let m: RegExpExecArray | null
         while ((m = re.exec(text)) !== null) {
           const rate = parseFloat(m[1])
-          const category = m[2].trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '')
+          const rawCat = m[2].trim()
+          const category = rawCat.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '')
           if (category && rate >= 1 && rate <= 30 && !earn_rate_multipliers[category]) {
             earn_rate_multipliers[category] = rate
+            earn_rate_rows.push({ category: rawCat, rate, rate_text: `${m[1]}x on ${rawCat}` })
           }
         }
       })
@@ -854,6 +1012,9 @@ export class PrinceOfTravelScraper extends BaseScraper {
 
     if (!headline || headline.length < 5) return null
 
+    const cardSlug = url.replace(/.*\/credit-cards\//, '').replace(/\/$/, '')
+    console.log(`[pot-phase2] ${cardSlug} insurance=${insurance_rows.length} earn_rates=${earn_rate_rows.length} transfer_partners=${transfer_partner_rows.length}`)
+
     return {
       card_name: cardName,
       issuer_slug,
@@ -881,6 +1042,13 @@ export class PrinceOfTravelScraper extends BaseScraper {
       card_foreign_transaction_fee,
       card_min_income,
       card_min_household_income,
+      // Extended detail tables
+      insurance_rows:        insurance_rows.length        ? insurance_rows        : undefined,
+      earn_rate_rows:        earn_rate_rows.length        ? earn_rate_rows        : undefined,
+      transfer_partner_rows: transfer_partner_rows.length ? transfer_partner_rows : undefined,
+      card_purchase_rate,
+      card_cash_advance_rate,
+      card_balance_transfer_rate,
     }
   }
 }
