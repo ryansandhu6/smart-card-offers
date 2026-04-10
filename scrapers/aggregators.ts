@@ -290,7 +290,7 @@ export class MintFlyingScraper extends BaseScraper {
         .slice(0, 30)
       if (cat && !earn_rate_multipliers[cat]) {
         earn_rate_multipliers[cat] = rate
-        earn_rate_rows.push({ category: er.category, rate, rate_text: er.rate })
+        earn_rate_rows.push({ category: er.category, rate_multiplier: rate, details: er.rate })
       }
     }
 
@@ -303,10 +303,10 @@ export class MintFlyingScraper extends BaseScraper {
       if (!partner_name) continue
       transfer_partner_rows.push({
         partner_name,
-        transfer_ratio: p.transferRatio ?? p.ratio ?? undefined,
-        transfer_time:  p.transferTime  ?? p.time  ?? undefined,
-        alliance:       p.alliance      ?? undefined,
-        best_for:       p.bestFor       ?? p.best_for ?? undefined,
+        ratio:         p.transferRatio ?? p.ratio ?? undefined,
+        transfer_time: p.transferTime  ?? p.time  ?? undefined,
+        alliance:      p.alliance      ?? undefined,
+        best_for:      p.bestFor       ?? p.best_for ?? undefined,
       })
     }
 
@@ -849,8 +849,8 @@ export class PrinceOfTravelScraper extends BaseScraper {
         if (!partner_name || partner_name.length < 2) return
         transfer_partner_rows.push({
           partner_name,
-          transfer_ratio: ratioIdx !== -1 ? cells[ratioIdx] || undefined : undefined,
-          transfer_time:  timeIdx  !== -1 ? cells[timeIdx]  || undefined : undefined,
+          ratio:         ratioIdx !== -1 ? cells[ratioIdx] || undefined : undefined,
+          transfer_time: timeIdx  !== -1 ? cells[timeIdx]  || undefined : undefined,
         })
       })
     })
@@ -906,7 +906,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
           const rate = parseFloat(rateMatch[1])
           if (rate >= 1 && rate <= 30 && !earn_rate_multipliers[slugCategory]) {
             earn_rate_multipliers[slugCategory] = rate
-            earn_rate_rows.push({ category, rate, rate_text })
+            earn_rate_rows.push({ category, rate_multiplier: rate, details: rate_text })
           }
         }
       })
@@ -925,7 +925,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
           const category = rawCat.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '')
           if (category && rate >= 1 && rate <= 30 && !earn_rate_multipliers[category]) {
             earn_rate_multipliers[category] = rate
-            earn_rate_rows.push({ category: rawCat, rate, rate_text: `${m[1]}x on ${rawCat}` })
+            earn_rate_rows.push({ category: rawCat, rate_multiplier: rate, details: `${m[1]}x on ${rawCat}` })
           }
         }
       })
