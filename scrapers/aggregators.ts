@@ -788,6 +788,17 @@ export class PrinceOfTravelScraper extends BaseScraper {
       card_foreign_transaction_fee = 0
     }
 
+    // ── Debug: log all table headers before per-table matching ───────────────
+    const cardSlug = url.replace(/.*\/credit-cards\//, '').replace(/\/$/, '')
+    const allTables: { headers: string[] }[] = []
+    $('table').each((_, table) => {
+      const headers = $(table).find('tr').first().find('th, td')
+        .map((_, th) => $(th).text().trim().toLowerCase()).get()
+      allTables.push({ headers })
+    })
+    const headersFound = allTables.map(t => t.headers)
+    console.log(`[pot-debug] ${cardSlug} all tables found:`, headersFound)
+
     // ── Insurance coverage table ──────────────────────────────────────────
     // PoT actual headers (all-caps in HTML, lowercased here): COVERAGE | MAXIMUM | DETAILS
     const insurance_rows: NonNullable<ScrapedOffer['insurance_rows']> = []
@@ -843,6 +854,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
         })
       })
     })
+    if (transfer_partner_rows.length === 0) console.log(`[pot-debug] ${cardSlug} no transfer_partners — headers seen:`, headersFound)
 
     // ── Interest rates ────────────────────────────────────────────────────
     let card_purchase_rate: number | undefined
@@ -918,6 +930,7 @@ export class PrinceOfTravelScraper extends BaseScraper {
         }
       })
     }
+    if (earn_rate_rows.length === 0) console.log(`[pot-debug] ${cardSlug} no earn_rates — headers seen:`, headersFound)
 
     // ── Welcome offer section ─────────────────────────────────────────────
     let headline = ''
@@ -1012,7 +1025,6 @@ export class PrinceOfTravelScraper extends BaseScraper {
 
     if (!headline || headline.length < 5) return null
 
-    const cardSlug = url.replace(/.*\/credit-cards\//, '').replace(/\/$/, '')
     console.log(`[pot-phase2] ${cardSlug} insurance=${insurance_rows.length} earn_rates=${earn_rate_rows.length} transfer_partners=${transfer_partner_rows.length}`)
 
     return {
