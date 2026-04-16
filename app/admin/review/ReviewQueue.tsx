@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition } from 'react'
+import React, { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer, setCardNoBonus, mergeCard, getCardActiveOffers, mergeCardWithOfferSelection } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
@@ -1218,7 +1218,7 @@ function ActiveOfferDetail({ label, offer, labelColour }: {
   const hd = labelColour === 'blue'
     ? 'text-blue-700 border-blue-200'
     : 'text-purple-700 border-purple-200'
-  const field = (name: string, value: string | number | null | undefined | JSX.Element) => (
+  const field = (name: string, value: React.ReactNode) => (
     <div>
       <p className="text-xs text-gray-400 mb-0.5">{name}</p>
       <p className="text-sm text-gray-700">{value ?? <span className="text-gray-300">—</span>}</p>
