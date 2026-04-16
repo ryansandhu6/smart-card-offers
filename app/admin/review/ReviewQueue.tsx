@@ -44,9 +44,10 @@ export default function ReviewQueue({ groups, allCards }: { groups: CardGroup[],
 }
 
 function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCardOption[] }) {
-  const [showEdit,         setShowEdit]         = useState(false)
-  const [showEditOffers,   setShowEditOffers]   = useState(false)
-  const [showMerge,        setShowMerge]        = useState(false)
+  const [showEdit,          setShowEdit]          = useState(false)
+  const [showEditOffers,    setShowEditOffers]    = useState(false)
+  const [showCurrentDetail, setShowCurrentDetail] = useState(false)
+  const [showMerge,         setShowMerge]         = useState(false)
   const [mergeTargetId,    setMergeTargetId]    = useState('')
   const [mergeErr,         setMergeErr]         = useState<string | null>(null)
   const [isPending,        startTrans]          = useTransition()
@@ -472,10 +473,43 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
                 <td className="px-4 py-2.5">
                   <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">active</span>
                 </td>
-                <td className="px-4 py-2.5 text-gray-400 text-xs italic">current</td>
+                <td className="px-4 py-2.5">
+                  <button
+                    onClick={() => setShowCurrentDetail(v => !v)}
+                    className="text-xs text-green-700 hover:underline"
+                  >
+                    {showCurrentDetail ? 'current ▴' : 'current ▾'}
+                  </button>
+                </td>
               </tr>
             )
           })()}
+
+          {/* Expandable current offer detail */}
+          {showCurrentDetail && sortedActive.length > 0 && (
+            <tr>
+              <td colSpan={8} className="p-0">
+                <div className="px-5 py-4 bg-green-50 border-t border-green-100">
+                  {group.card_description && (
+                    <p className="text-xs text-gray-500 mb-3 italic">{group.card_description}</p>
+                  )}
+                  <div className="grid grid-cols-2 gap-6">
+                    {welcomeActive && (
+                      <ActiveOfferDetail label="Welcome Bonus" offer={welcomeActive} labelColour="blue" />
+                    )}
+                    {additionalActive.map((o, i) => (
+                      <ActiveOfferDetail
+                        key={o.id}
+                        label={additionalActive.length > 1 ? `Additional Bonus ${i + 1}` : 'Additional Bonus'}
+                        offer={o}
+                        labelColour="purple"
+                      />
+                    ))}
+                  </div>
+                </div>
+              </td>
+            </tr>
+          )}
 
           {/* Pending summary row */}
           {(welcomePending || additionalPending.length > 0) && (() => {
@@ -1170,6 +1204,49 @@ function AddOfferPanel({ cardId }: { cardId: string }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Active offer read-only detail ────────────────────────────────────────────
+
+function ActiveOfferDetail({ label, offer, labelColour }: {
+  label: string
+  offer: OfferRow
+  labelColour: 'blue' | 'purple'
+}) {
+  const hd = labelColour === 'blue'
+    ? 'text-blue-700 border-blue-200'
+    : 'text-purple-700 border-purple-200'
+  const field = (name: string, value: string | number | null | undefined | JSX.Element) => (
+    <div>
+      <p className="text-xs text-gray-400 mb-0.5">{name}</p>
+      <p className="text-sm text-gray-700">{value ?? <span className="text-gray-300">—</span>}</p>
+    </div>
+  )
+  const timeframeMonths = offer.spend_timeframe_days
+    ? Math.round(offer.spend_timeframe_days / 30)
+    : null
+
+  return (
+    <div className="space-y-2">
+      <h4 className={`text-xs font-semibold uppercase tracking-wide border-b pb-1 ${hd}`}>{label}</h4>
+      {field('Headline', offer.headline)}
+      {field('Points', offer.points_value?.toLocaleString('en-CA') ?? null)}
+      {field('Cashback', offer.cashback_value != null ? `$${offer.cashback_value}` : null)}
+      {field('Spend Req', offer.spend_requirement != null ? `$${offer.spend_requirement.toLocaleString('en-CA')}` : null)}
+      {field('Timeframe', timeframeMonths != null ? `${timeframeMonths} month${timeframeMonths !== 1 ? 's' : ''}` : null)}
+      {offer.start_month != null && field('Start month', `month ${offer.start_month}`)}
+      {offer.is_monthly_bonus && (
+        <div className="pl-2 border-l-2 border-gray-200 space-y-1.5 mt-1">
+          {field('Points/month', offer.monthly_points_value?.toLocaleString('en-CA') ?? null)}
+          {field('Cashback/month', offer.monthly_cashback_value != null ? `$${offer.monthly_cashback_value}` : null)}
+          {field('Spend/month', offer.monthly_spend_requirement != null ? `$${offer.monthly_spend_requirement.toLocaleString('en-CA')}` : null)}
+          {field('Months', offer.bonus_months)}
+        </div>
+      )}
+      {offer.is_limited_time && field('Expires', offer.expires_at?.slice(0, 10) ?? 'unknown')}
+      {field('Source', offer.source_name)}
     </div>
   )
 }
