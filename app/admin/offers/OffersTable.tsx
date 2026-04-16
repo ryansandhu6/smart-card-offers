@@ -29,8 +29,10 @@ type Offer = {
   offer_type: string
   source_priority: number | null
   source_name: string | null
+  review_status: string | null
   is_limited_time: boolean
   expires_at: string | null
+  scraped_at: string | null
   card: { name: string; slug: string; has_no_bonus: boolean } | null
 }
 
@@ -40,6 +42,7 @@ type CardRow = {
   cardId: string
   welcomeOffer: Offer | null
   additionalOffers: Offer[]
+  inactiveOffers: Offer[]
   cashbackValue: number | null
   source_priority: number | null
   is_limited_time: boolean
@@ -97,6 +100,15 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
     g.offers.sort((a, b) => (TYPE_ORDER[a.offer_type] ?? 0) - (TYPE_ORDER[b.offer_type] ?? 0))
   }
 
+  // Build inactive offers lookup from ALL offers (not just the filtered-visible set)
+  const inactiveBySlug = new Map<string, Offer[]>()
+  for (const o of offers) {
+    if (o.is_active) continue
+    const slug = o.card?.slug ?? 'unknown'
+    if (!inactiveBySlug.has(slug)) inactiveBySlug.set(slug, [])
+    inactiveBySlug.get(slug)!.push(o)
+  }
+
   const cardRows: CardRow[] = [...grouped.entries()].map(([slug, g]) => {
     const welcome     = g.offers.find(o => o.offer_type === 'welcome_bonus') ?? null
     const additionals = g.offers.filter(o => o.offer_type === 'additional_offer')
@@ -110,6 +122,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
     return {
       cardSlug: slug, cardName: g.cardName, cardId: g.offers[0]?.card_id ?? '',
       welcomeOffer: welcome, additionalOffers: additionals,
+      inactiveOffers: inactiveBySlug.get(slug) ?? [],
       cashbackValue, source_priority: sourcePriority, is_limited_time: isLtd,
       hasNoBonus,
     }
@@ -279,6 +292,7 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
                       <CardEditPanel
                         welcomeOffer={row.welcomeOffer}
                         additionalOffers={row.additionalOffers}
+                        inactiveOffers={row.inactiveOffers}
                         cardId={row.cardId}
                         onDone={() => setEditingCard(null)}
                         onCancel={() => setEditingCard(null)}
@@ -302,16 +316,18 @@ export default function OffersTable({ offers, cards }: { offers: Offer[]; cards:
 // ── Card Edit Panel ───────────────────────────────────────────────────────────
 
 function CardEditPanel({
-  welcomeOffer, additionalOffers, cardId, onDone, onCancel,
+  welcomeOffer, additionalOffers, inactiveOffers, cardId, onDone, onCancel,
 }: {
   welcomeOffer: Offer | null
   additionalOffers: Offer[]
+  inactiveOffers: Offer[]
   cardId: string
   onDone: () => void
   onCancel: () => void
 }) {
-  const [isPending, startTrans] = useTransition()
-  const [err, setErr]           = useState<string | null>(null)
+  const [isPending, startTrans]       = useTransition()
+  const [err, setErr]                 = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
   const router = useRouter()
 
   const [headline,   setHeadline]   = useState(welcomeOffer?.headline ?? additionalOffers[0]?.headline ?? '')
@@ -672,6 +688,50 @@ function CardEditPanel({
           Delete Card &amp; All Offers
         </button>
       </div>
+
+      {inactiveOffers.length > 0 && (
+        <div className="pt-3 border-t border-blue-100 mt-3">
+          <button
+            onClick={() => setShowHistory(h => !h)}
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
+          >
+            <span className={`transition-transform ${showHistory ? 'rotate-90' : ''}`}>▶</span>
+            Inactive Offers ({inactiveOffers.length})
+          </button>
+          {showHistory && (
+            <table className="mt-2 w-full text-xs text-gray-600 border border-gray-200 rounded overflow-hidden">
+              <thead className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                <tr>
+                  <th className="px-3 py-1.5 text-left">Type</th>
+                  <th className="px-3 py-1.5 text-right">Points</th>
+                  <th className="px-3 py-1.5 text-right">Spend Req</th>
+                  <th className="px-3 py-1.5 text-left">Source</th>
+                  <th className="px-3 py-1.5 text-left">Status</th>
+                  <th className="px-3 py-1.5 text-left">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {inactiveOffers.map(o => (
+                  <tr key={o.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-1.5 font-mono">{o.offer_type}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
+                      {o.points_value != null ? o.points_value.toLocaleString() : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
+                      {o.spend_requirement != null ? `$${o.spend_requirement.toLocaleString()}` : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-3 py-1.5">{o.source_name ?? <span className="text-gray-300">—</span>}</td>
+                    <td className="px-3 py-1.5">{o.review_status ?? <span className="text-gray-300">—</span>}</td>
+                    <td className="px-3 py-1.5 text-gray-400">
+                      {o.scraped_at ? new Date(o.scraped_at).toLocaleDateString('en-CA') : <span className="text-gray-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   )
 }

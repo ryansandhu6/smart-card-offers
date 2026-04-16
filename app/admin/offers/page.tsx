@@ -10,8 +10,8 @@ export default async function OffersPage() {
       .select(`
         id, card_id, headline, points_value, cashback_value, spend_requirement,
         spend_timeframe_days, start_month, is_monthly_bonus, monthly_points_value, monthly_spend_requirement, monthly_cashback_value, bonus_months,
-        is_active, offer_type, source_priority, source_name,
-        is_limited_time, expires_at,
+        is_active, offer_type, source_priority, source_name, review_status,
+        is_limited_time, expires_at, scraped_at,
         card:credit_cards ( name, slug, has_no_bonus )
       `)
       .order('is_active', { ascending: false })
@@ -34,8 +34,8 @@ export default async function OffersPage() {
     is_monthly_bonus: boolean; monthly_points_value: number | null
     monthly_spend_requirement: number | null; monthly_cashback_value: number | null; bonus_months: number | null
     start_month: number | null
-    source_priority: number | null; source_name: string | null
-    is_limited_time: boolean; expires_at: string | null
+    source_priority: number | null; source_name: string | null; review_status: string | null
+    is_limited_time: boolean; expires_at: string | null; scraped_at: string | null
     card: { name: string; slug: string; has_no_bonus: boolean } | null
   }
   const rows = (offers ?? []).map(o => ({
