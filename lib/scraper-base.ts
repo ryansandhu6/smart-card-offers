@@ -366,17 +366,22 @@ export abstract class BaseScraper {
     const confidence = this.computeConfidence(incomingPriority, incomingVerified, now)
 
     // Check if an offer already exists for this (card_id, offer_type).
-    // For welcome_bonus the DB has a partial unique constraint (card_id) WHERE offer_type='welcome_bonus',
-    // so we cannot insert a second row even with a different headline — look up without headline.
+    // For welcome_bonus we look up without headline (one row per card for this type).
     // For other types, headlines distinguish rows.
+    // We order inactive rows first so that if both an active row and a pending row exist
+    // (which can happen after a previous scrape created a pending row), we prefer to
+    // update the pending row in-place rather than stacking another pending row on top.
     const existingBaseQuery = supabaseAdmin
       .from('card_offers')
-      .select('id, source_priority, review_status, points_value, cashback_value, spend_requirement')
+      .select('id, source_priority, review_status, is_active, points_value, cashback_value, spend_requirement')
       .eq('card_id', card_id)
       .eq('offer_type', offer.offer_type)
-    const { data: existing } = offer.offer_type === 'welcome_bonus'
-      ? await existingBaseQuery.maybeSingle()
-      : await existingBaseQuery.eq('headline', offer.headline).maybeSingle()
+      .order('is_active', { ascending: true }) // inactive (false) before active (true)
+      .limit(1)
+    const { data: existingRows } = offer.offer_type === 'welcome_bonus'
+      ? await existingBaseQuery
+      : await existingBaseQuery.eq('headline', offer.headline)
+    const existing = existingRows?.[0] ?? null
 
     if (existing) {
       const existingPriority = existing.source_priority ?? 99
@@ -412,14 +417,10 @@ export abstract class BaseScraper {
         if (error) throw new Error(`last_seen_at update failed: ${error.message}`)
         return 'skipped'
       } else {
-        // Incoming source has strictly higher trust (lower number) — full overwrite.
-        // Also update headline: for welcome_bonus the existing row may have a different
-        // headline from a prior scrape (headline is not part of the lookup key).
         let review_reason: string
         if (existingPriority > incomingPriority) {
           review_reason = 'lower_priority_source'
         } else {
-          // Same priority, something changed
           const incomingPoints = offer.points_value ?? 0
           const incomingCash   = offer.cashback_value ?? 0
           const existingPoints = existing.points_value ?? 0
@@ -428,31 +429,45 @@ export abstract class BaseScraper {
             ? 'higher_bonus'
             : 'updated_terms'
         }
-        const { error } = await supabaseAdmin
-          .from('card_offers')
-          .update({
-            headline: offer.headline,
-            details: offer.details,
-            points_value: offer.points_value,
-            cashback_value: offer.cashback_value,
-            spend_requirement: offer.spend_requirement,
-            spend_timeframe_days: offer.spend_timeframe_days,
-            extra_perks: offer.extra_perks,
-            is_limited_time: offer.is_limited_time ?? false,
-            expires_at: offer.expires_at,
-            source_url: offer.source_url,
-            scraped_at: now,
-            last_seen_at: now,
-            source_priority: incomingPriority,
-            source_name: this.sourceName || null,
-            is_verified: incomingVerified,
-            confidence_score: confidence,
-            is_active: false,
-            review_status: 'pending_review',
-            review_reason,
-          })
-          .eq('id', existing.id)
-        if (error) throw new Error(`offer overwrite failed: ${error.message}`)
+
+        const pendingPayload = {
+          headline: offer.headline,
+          details: offer.details,
+          points_value: offer.points_value,
+          cashback_value: offer.cashback_value,
+          spend_requirement: offer.spend_requirement,
+          spend_timeframe_days: offer.spend_timeframe_days,
+          extra_perks: offer.extra_perks,
+          is_limited_time: offer.is_limited_time ?? false,
+          expires_at: offer.expires_at,
+          source_url: offer.source_url,
+          scraped_at: now,
+          last_seen_at: now,
+          source_priority: incomingPriority,
+          source_name: this.sourceName || null,
+          is_verified: incomingVerified,
+          confidence_score: confidence,
+          is_active: false,
+          review_status: 'pending_review',
+          review_reason,
+        }
+
+        if (existing.is_active) {
+          // The existing row is live — do NOT touch it. Insert a new pending row so
+          // the active offer stays visible to users until an admin reviews and approves.
+          const { error } = await supabaseAdmin
+            .from('card_offers')
+            .insert({ card_id, offer_type: offer.offer_type, ...pendingPayload })
+          if (error) throw new Error(`pending insert (active preserved) failed: ${error.message}`)
+        } else {
+          // Existing row is already inactive/pending — safe to overwrite in-place.
+          const { error } = await supabaseAdmin
+            .from('card_offers')
+            .update(pendingPayload)
+            .eq('id', existing.id)
+          if (error) throw new Error(`offer overwrite failed: ${error.message}`)
+        }
+
         await logOfferHistory({ card_id, offer_type: offer.offer_type, headline: offer.headline, points_value: offer.points_value, cashback_value: offer.cashback_value, spend_requirement: offer.spend_requirement, spend_timeframe_days: offer.spend_timeframe_days, source_priority: incomingPriority })
         return 'saved'
       }
