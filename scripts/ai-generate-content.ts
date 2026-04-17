@@ -123,7 +123,8 @@ Respond with a JSON array: [{"id": "...", "short_description": "..."}]`,
     }],
   })
 
-  const text = response.content[0].type === 'text' ? response.content[0].text.trim() : '[]'
+  const raw  = response.content[0].type === 'text' ? response.content[0].text.trim() : '[]'
+  const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
   const parsed = JSON.parse(text) as { id: string; short_description: string }[]
   return parsed.filter(r => r.id && r.short_description)
 }
@@ -180,7 +181,8 @@ Respond with a JSON array: [{"id": "...", "headline": "..."}]`,
     }],
   })
 
-  const text = response.content[0].type === 'text' ? response.content[0].text.trim() : '[]'
+  const raw  = response.content[0].type === 'text' ? response.content[0].text.trim() : '[]'
+  const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
   const parsed = JSON.parse(text) as { id: string; headline: string }[]
   return parsed.filter(r => r.id && r.headline)
 }
@@ -212,7 +214,7 @@ async function processCards() {
       issuers!inner(name)
     `)
     .eq('is_active', true)
-    .neq('content_source', 'manual')
+    .or('content_source.is.null,content_source.neq.manual')
     .order('name')
 
   if (error) throw new Error(`Card fetch failed: ${error.message}`)
@@ -336,7 +338,7 @@ async function processOffers() {
       credit_cards!inner(name, rewards_program)
     `)
     .eq('is_active', true)
-    .neq('content_source', 'manual')
+    .or('content_source.is.null,content_source.neq.manual')
     .order('scraped_at', { ascending: false })
 
   if (error) throw new Error(`Offer fetch failed: ${error.message}`)
