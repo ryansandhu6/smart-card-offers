@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-04-09 (migrations 011–044: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup, monthly bonus fields, scraper safety hardening, offer archival on approve, priority inversion fix, source_name tracking, referral URL, offer review queue polish, FX/income fields, interest rates, card detail tables — insurance, earn rates, transfer partners, credits, lounge access)
+> Last updated: 2026-04-17 (migrations 011–046: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup, monthly bonus fields, scraper safety hardening, offer archival on approve, priority inversion fix, source_name tracking, referral URL, offer review queue polish, FX/income fields, interest rates, card detail tables — insurance, earn rates, transfer partners, credits, lounge access; Phase 2 tables populated, offer system fixes, admin UI improvements)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -660,33 +660,42 @@ One row per card product. Seeded via `scripts/seed-cards.ts`. Scrapers can creat
 
 ### `card_offers`
 
-One row per unique (card, offer_type, headline) combination.
+One row per unique (card, offer_type, headline) combination. Multiple rows with the same `offer_type` on a single card are now allowed — both active and pending rows may coexist.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID | PK |
 | `card_id` | UUID | FK → credit_cards |
-| `offer_type` | TEXT | `welcome_bonus`, `limited_time`, `retention`, `referral` |
-| `headline` | TEXT | Human-readable offer summary. Part of unique key. |
+| `offer_type` | TEXT | `welcome_bonus`, `additional_offer`, `referral` |
+| `headline` | TEXT | Human-readable offer summary |
 | `details` | TEXT | Full description |
 | `points_value` | INTEGER | Raw points offered. Null for cashback. |
 | `cashback_value` | NUMERIC | Cashback as a percentage (e.g. `10.0` = 10%). Null for points. |
 | `spend_requirement` | NUMERIC | Minimum spend to qualify (CAD) |
 | `spend_timeframe_days` | INTEGER | Days to meet spend requirement |
+| `start_month` | INTEGER | Month (1–12) after approval when the bonus period begins. `12` = anniversary date. See [Section 8](#8-data-quality-notes). |
+| `is_monthly_bonus` | BOOLEAN | True if the offer has a monthly recurring component |
+| `monthly_points_value` | INTEGER | Points earned per qualifying month |
+| `monthly_cashback_value` | NUMERIC | Cashback earned per qualifying month (%) |
+| `monthly_spend_requirement` | NUMERIC | Spend required each month to earn the monthly bonus |
+| `bonus_months` | INTEGER | Number of qualifying months |
 | `extra_perks` | TEXT[] | e.g. `["First year fee waived", "Priority Pass"]` |
 | `is_limited_time` | BOOLEAN | True if the offer has an expiry |
 | `expires_at` | DATE | Offer expiry date |
 | `is_verified` | BOOLEAN | Manually or source-verified |
 | `source_url` | TEXT | Where the offer was found |
+| `source_name` | TEXT | Scraper identifier: `churningcanada`, `princeoftravel`, `mintflying`, `manual` |
+| `source_priority` | INTEGER | **0** = manual, **1** = churningcanada, **2** = princeoftravel, **4** = mintflying |
 | `scraped_at` | TIMESTAMPTZ | When the scraper last fetched it |
-| `source_priority` | INTEGER | **1** = bank-direct, **2** = aggregator, **3** = hardcoded |
 | `last_seen_at` | TIMESTAMPTZ | Last time this offer appeared in a scrape run |
 | `confidence_score` | INTEGER | 0–100 computed score (see trust system) |
-| `is_active` | BOOLEAN | Set to false if not seen in 7+ days |
+| `is_active` | BOOLEAN | True = shown to users. Set to false if not seen in 7+ days, or manually deactivated. |
+| `review_status` | TEXT | `pending_review`, `approved`, `rejected`, `archived` |
+| `review_reason` | TEXT | Why offer entered review: `new_card`, `new_offer`, `higher_bonus`, `updated_terms`, `lower_priority_source` |
+| `content_source` | TEXT | Origin of headline/description: `manual`, `ai_generated`, `scraper`, or NULL |
+| `is_better_than_usual` | BOOLEAN | True when current value exceeds 12-month average (from `offer_history_stats` view) |
 
-**Unique constraint:** `(card_id, offer_type, headline)` — prevents duplicates, enables upsert.
-
-**RLS:** Public read where `is_active = true`. Writes require service role.
+**RLS:** Public read where `is_active = true AND review_status = 'approved'`. Writes require service role.
 
 ---
 
@@ -968,6 +977,24 @@ Always check before displaying limited-time offers:
 const isExpired = offer.expires_at && new Date(offer.expires_at) < new Date()
 if (isExpired) return null  // or show as expired
 ```
+
+### `start_month` Display
+
+`start_month` is an integer (1–12) representing which month after card approval the bonus period begins.
+
+```tsx
+function formatStartMonth(startMonth: number | null): string | null {
+  if (!startMonth || startMonth === 1) return null          // no label needed
+  if (startMonth === 12) return 'Starting at anniversary'   // special case
+  return `Starting month ${startMonth}`
+}
+```
+
+- `null` or `1` → no label needed (bonus starts immediately / first month)
+- `12` → display as **"Starting at anniversary"** — do not display "Starting month 12"
+- Any other value → display as "Starting month N"
+
+---
 
 ### Stub Cards
 
@@ -1618,7 +1645,92 @@ card_balance_transfer_rate?: number
 
 ### Remaining TODOs
 
-1. **Populate detail tables** — run a manual PoT + MintFlying scrape from the admin UI to seed `card_insurance`, `card_earn_rates`, `card_transfer_partners`, `card_credits`, `card_lounge_access` for the first time
+1. ~~**Populate detail tables**~~ — ✅ Done (session 2026-04-15/17, see Section 16)
 2. **Frontend integration** — surface the new nested arrays (insurance, earn rates, transfer partners, credits, lounge access) in the card detail page UI
 3. **ChurningCanada re-enable** — scraper is written and working but disabled; re-enable once data quality is confirmed
 4. **Tier boundaries** — corrected in this session; verify the UI tier filter labels match the updated ranges
+
+---
+
+## 16. Session Summary — 2026-04-15/17 (Migrations 045–046)
+
+### Phase 2 Detail Tables — Now Populated
+
+The PoT scraper was run manually to seed the five detail tables for the first time.
+
+| Table | Rows | Populated columns |
+|---|---|---|
+| `card_insurance` | **440** | `coverage_type`, `maximum`, `details` |
+| `card_earn_rates` | **200** | `category`, `rate_multiplier`, `details`, `cap`, `after_cap` |
+| `card_transfer_partners` | **80** | `partner`, `ratio`, `transfer_time` |
+| `card_credits` | **0** | Populated by MintFlying — not yet run |
+| `card_lounge_access` | **0** | Populated by MintFlying — not yet run |
+
+MintFlying needs to be run to seed `card_credits` and `card_lounge_access`.
+
+---
+
+### Offer System Fixes
+
+**Migration 045 — Drop welcome_bonus unique index**
+
+The partial unique index `card_offers_welcome_unique` (one `welcome_bonus` row per `card_id`) was dropped. Multiple active offers of the same type are now allowed per card at both the DB and application level.
+
+**`approveOffer()` — archive step removed (`app/admin/actions.ts`)**
+
+Previously, approving a new offer archived all other active offers of the same type for that card. This step has been removed. Approving an offer now only activates that single offer; existing active offers are untouched.
+
+**Scraper no longer overwrites active rows (`lib/scraper-base.ts`)**
+
+Root cause identified: when a scraper detected a changed offer, it updated the existing `card_offers` row in-place — stamping `is_active: false` even when the row was the live, user-visible offer. This displaced 28 active offers.
+
+Fix: when the existing row is `is_active: true`, the scraper now **inserts a new pending row** alongside the active one. The active offer stays live until an admin reviews and approves the pending one. Only when the existing row is already inactive/pending does the scraper overwrite in-place.
+
+The lookup was also changed from `.maybeSingle()` to `.order('is_active', asc).limit(1)` so that if both an active and a pending row exist, subsequent scrapes find and update the pending row rather than stacking another pending row on top.
+
+**Migration 046 — Recovery script (run manually in Supabase SQL editor)**
+
+```sql
+UPDATE public.card_offers
+SET is_active = true, review_status = 'approved'
+WHERE review_status = 'pending_review'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.card_offers co2
+    WHERE co2.card_id    = card_offers.card_id
+      AND co2.offer_type = card_offers.offer_type
+      AND co2.is_active  = true
+      AND co2.id        != card_offers.id
+  );
+```
+
+This promotes pending offers that have no active sibling back to `is_active: true`. Idempotent — safe to re-run.
+
+---
+
+### Admin UI Improvements
+
+**Review queue — expandable current offer (`app/admin/review/ReviewQueue.tsx`)**
+
+The static "current" label on active offer rows in the review queue is now a clickable toggle (`current ▾ / ▴`). Clicking it expands a read-only green panel showing full offer details: Headline, Points, Cashback, Spend Req, Timeframe, monthly bonus fields, Expires, Source. Card `short_description` is shown at the top when present. Helps admins compare the live offer against the incoming pending one before deciding to approve or trash.
+
+**Card edit panel — inactive offer history (`app/admin/offers/OffersTable.tsx`)**
+
+A collapsible "Inactive Offers (N)" section has been added at the bottom of each card's edit panel in `/admin/offers`. It shows a read-only table of all historical inactive offers for that card: Type, Points, Spend Req, Source, Status, Date. Collapsed by default; hidden entirely if no inactive offers exist. `scraped_at` and `review_status` are now included in the offers query.
+
+---
+
+### Migrations Applied
+
+| # | File | What Changed |
+|---|---|---|
+| 045 | `045_drop_welcome_bonus_unique.sql` | Dropped `card_offers_welcome_unique` partial index — allows multiple active offers of the same type per card |
+| 046 | `046_recover_displaced_offers.sql` | One-time recovery: promotes displaced `pending_review` offers with no active sibling to `is_active: true` — **run manually in Supabase SQL editor** |
+
+---
+
+### Remaining TODOs
+
+1. **Run migration 046** in Supabase SQL editor to restore 28 displaced offers to active
+2. **Run MintFlying scraper** to populate `card_credits` and `card_lounge_access`
+3. **Frontend integration** — surface detail table arrays (insurance, earn rates, transfer partners, credits, lounge) in the card detail page UI
+4. **`start_month` display** — implement display logic in frontend (see Section 8)
