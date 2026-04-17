@@ -350,8 +350,31 @@ export class MintFlyingScraper extends BaseScraper {
     } else if (typeof card.loungeAccess === 'string' && card.loungeAccess.trim()) {
       lounge_access_rows.push({ network: card.loungeAccess.trim() })
     } else if (card.loungeAccess === true) {
-      const network = String(card.airportLoungeNetwork ?? card.loungeNetwork ?? '').trim() || 'Lounge Access'
-      lounge_access_rows.push({ network })
+      const details: string = typeof card.loungeDetails === 'string' ? card.loungeDetails.trim() : ''
+      if (details) {
+        // Split on ";" — each clause describes one lounge program
+        for (const clause of details.split(';')) {
+          const c = clause.trim()
+          if (!c) continue
+
+          // Detect network
+          let network: string
+          if (/maple leaf/i.test(c))      network = 'Air Canada Maple Leaf Lounge'
+          else if (/priority pass/i.test(c)) network = 'Priority Pass'
+          else                              network = c
+
+          // Detect guest policy
+          const guest_policy = /\+?\s*1\s*guest|plus\s+1\s+guest/i.test(c) ? '1 guest included' : undefined
+
+          // Detect visits_per_year — undefined means unlimited or unspecified (pay-per-entry: also leave undefined)
+          const visits_per_year: number | undefined = undefined
+
+          lounge_access_rows.push({ network, visits_per_year, guest_policy, details: c })
+        }
+      } else {
+        // No loungeDetails — fall back to a generic row
+        lounge_access_rows.push({ network: 'Lounge Access' })
+      }
     }
 
     // ── Feature tags → extra_perks ────────────────────────────────────────────

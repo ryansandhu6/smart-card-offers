@@ -1666,7 +1666,18 @@ The PoT scraper was run manually to seed the five detail tables for the first ti
 | `card_credits` | **0** | Populated by MintFlying — not yet run |
 | `card_lounge_access` | **0** | Populated by MintFlying — not yet run |
 
-MintFlying needs to be run to seed `card_credits` and `card_lounge_access`.
+MintFlying needs to be run to seed `card_lounge_access`. **`card_credits` cannot be populated from MintFlying** — MintFlying has no structured credits data. The `pros` array is unstructured prose only (e.g. "$100 NEXUS credit", "4th night free on Aeroplan hotel redemptions"). `card_credits` for MintFlying cards requires manual entry.
+
+**MintFlying lounge extraction (updated 2026-04-17)**
+
+The scraper now parses `loungeDetails` (semicolon-delimited string) instead of emitting a generic `{ network: 'Lounge Access' }` row. Parsing rules:
+- Split on `";"` — each clause is one lounge program
+- `"Maple Leaf"` in clause → `network = 'Air Canada Maple Leaf Lounge'`
+- `"Priority Pass"` in clause → `network = 'Priority Pass'`
+- `/plus 1 guest|\+?\s*1 guest/i` in clause → `guest_policy = '1 guest included'`
+- `visits_per_year` is always left `undefined` (type is `number | undefined`; unlimited and pay-per-entry are both stored as omitted)
+- Full clause stored as `details`
+- Fallback when `loungeDetails` is absent but `loungeAccess === true`: `{ network: 'Lounge Access' }`
 
 ---
 
