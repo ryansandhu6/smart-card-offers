@@ -1661,8 +1661,8 @@ The PoT scraper was run manually to seed the five detail tables for the first ti
 | Table | Rows | Populated columns |
 |---|---|---|
 | `card_insurance` | **440** | `coverage_type`, `maximum`, `details` |
-| `card_earn_rates` | **200** | `category`, `rate_multiplier`, `details`, `cap`, `after_cap` |
-| `card_transfer_partners` | **80** | `partner`, `ratio`, `transfer_time` |
+| `card_earn_rates` | **200** | `category`, `rate` (numeric), `rate_text` (raw string e.g. "3x on groceries") |
+| `card_transfer_partners` | **80** | `partner_name`, `transfer_ratio`, `transfer_time` |
 | `card_credits` | **0** | Populated by MintFlying — not yet run |
 | `card_lounge_access` | **0** | Populated by MintFlying — not yet run |
 
@@ -1725,6 +1725,38 @@ A collapsible "Inactive Offers (N)" section has been added at the bottom of each
 |---|---|---|
 | 045 | `045_drop_welcome_bonus_unique.sql` | Dropped `card_offers_welcome_unique` partial index — allows multiple active offers of the same type per card |
 | 046 | `046_recover_displaced_offers.sql` | One-time recovery: promotes displaced `pending_review` offers with no active sibling to `is_active: true` — **run manually in Supabase SQL editor** |
+
+---
+
+---
+
+### API Connection Fix — Column Name Corrections (2026-04-17)
+
+**Root cause of "API not connecting":** Three public endpoints (`/api/cards`, `/api/cards/:slug`, `/api/offers`) were requesting non-existent column names in their PostgREST select strings for the Phase 2 detail tables. PostgREST returns an error (400 Bad Request) when any selected column does not exist, which caused the entire query to fail and the API to return 500.
+
+**Wrong column names used in queries (now fixed):**
+
+| Table | Wrong name used | Correct DB column name |
+|---|---|---|
+| `card_earn_rates` | `rate_multiplier` | `rate` (NUMERIC) |
+| `card_earn_rates` | `details` | `rate_text` (TEXT — raw string e.g. "3x on groceries") |
+| `card_transfer_partners` | `ratio` | `transfer_ratio` (TEXT) |
+
+**Files fixed:**
+- `lib/supabase.ts` — `getCards()` and `searchCards()`: `earn_rates` and `transfer_partners` select strings corrected; `EarnRateRow` and `TransferPartnerRow` internal types corrected
+- `app/api/cards/[slug]/route.ts` — same select string fix
+- `types/index.ts` — `ScrapedOffer.earn_rate_rows` and `transfer_partner_rows` field names corrected
+- `scrapers/aggregators.ts` — all four `earn_rate_rows.push()` calls updated to use `rate`/`rate_text`; all three `transfer_partner_rows.push()` calls updated to use `transfer_ratio`
+
+**Unchanged (already correct):** `getActiveOffers()` in `lib/supabase.ts` already used the correct column names.
+
+**Other confirmed correct facts:**
+- `card_offers` offer value columns: `points_value` (INTEGER), `cashback_value` (NUMERIC) — these were always correct
+- `start_month = 12` means anniversary date — display as "Starting at anniversary" (see Section 8)
+- Multiple active offers per card are now allowed (migration 045 dropped the `welcome_bonus` unique index)
+- Scraper now inserts a new pending row alongside an active one (never overwrites active rows in-place)
+- Priority system: 0=manual (never overwritable), 1=churningcanada, 2=princeoftravel, 4=mintflying
+- DB counts as of 2026-04-17: `card_insurance`=440 rows, `card_earn_rates`=200 rows, `card_transfer_partners`=80 rows
 
 ---
 

@@ -164,13 +164,13 @@ export interface ScrapedOffer {
 
   earn_rate_rows?: Array<{
     category: string
-    rate_multiplier: number
-    details: string
+    rate: number
+    rate_text: string
   }>
 
   transfer_partner_rows?: Array<{
     partner_name: string
-    ratio?: string
+    transfer_ratio?: string
     transfer_time?: string
     alliance?: string
     best_for?: string
