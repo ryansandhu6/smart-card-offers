@@ -1501,8 +1501,8 @@ This session hardened the data pipeline (review queue filtering, scraper schedul
 | 037 | `037_review_reason.sql` | Added `review_reason TEXT` to `card_offers` — explains why an offer entered the review queue (`new_card`, `new_offer`, `higher_bonus`, `updated_terms`, `lower_priority_source`) |
 | 038 | `038_content_source.sql` | Added `content_source TEXT` to both `credit_cards` and `card_offers` — tracks origin of headline/description: `manual`, `ai_generated`, `scraper`, or NULL |
 | 039 | `039_card_insurance.sql` | New table `card_insurance (card_id, coverage_type, maximum, details, source_priority, scraped_at)` — unique on `(card_id, coverage_type)` |
-| 040 | `040_card_earn_rates.sql` | New table `card_earn_rates (card_id, category, rate, rate_text, source_priority, scraped_at)` — unique on `(card_id, category)` |
-| 041 | `041_card_transfer_partners.sql` | New table `card_transfer_partners (card_id, partner_name, transfer_ratio, transfer_time, alliance, best_for, source_priority, scraped_at)` — unique on `(card_id, partner_name)` |
+| 040 | `040_card_earn_rates.sql` | New table `card_earn_rates` — **migration file uses `rate`/`rate_text` but live DB has `rate_multiplier`/`details`** — unique on `(card_id, category)` |
+| 041 | `041_card_transfer_partners.sql` | New table `card_transfer_partners` — **migration file uses `transfer_ratio` but live DB has `ratio`** — unique on `(card_id, partner_name)` |
 | 042 | `042_card_credits.sql` | New table `card_credits (card_id, credit_type, amount, description, frequency, source_priority, scraped_at)` — unique on `(card_id, credit_type)` |
 | 043 | `043_card_lounge_access.sql` | New table `card_lounge_access (card_id, network, visits_per_year, guest_policy, details, source_priority, scraped_at)` — unique on `(card_id, network)` |
 | 044 | `044_interest_rates.sql` | Added `purchase_rate`, `cash_advance_rate`, `balance_transfer_rate NUMERIC(5,2)` to `credit_cards` |
@@ -1526,7 +1526,7 @@ Lower number = higher trust. A higher-numbered source will never overwrite a low
 
 **PoT scraper now extracts and saves:**
 - `card_insurance` — from "Insurance Coverage" table (COVERAGE / MAXIMUM / DETAILS)
-- `card_earn_rates` — from "Earning Rewards" table (CATEGORY / RATE), preserving raw `rate_text`
+- `card_earn_rates` — from "Earning Rewards" table (CATEGORY / RATE); stored as `rate_multiplier` (numeric) + `details` (raw string)
 - `card_transfer_partners` — from "Transfer Partners" table (PARTNER / RATIO / TRANSFER TIME)
 - `credit_cards.purchase_rate`, `cash_advance_rate`, `balance_transfer_rate` — from "Interest Rates" section (null-guarded writes)
 
@@ -1565,11 +1565,11 @@ All card endpoints (`/api/cards`, `/api/cards/:slug`, `/api/offers` card objects
     { "coverage_type": "Travel Medical", "maximum": "$5,000,000", "details": "Up to 15 days per trip" }
   ],
   "earn_rates": [
-    { "category": "Groceries", "rate": 3.0, "rate_text": "3 points per $1" },
-    { "category": "All other purchases", "rate": 1.0, "rate_text": "1 point per $1" }
+    { "category": "Groceries", "rate_multiplier": 3.0, "details": "3 points per $1" },
+    { "category": "All other purchases", "rate_multiplier": 1.0, "details": "1 point per $1" }
   ],
   "transfer_partners": [
-    { "partner_name": "Air Canada Aeroplan", "transfer_ratio": "1:1", "transfer_time": "Instant", "alliance": null, "best_for": null }
+    { "partner_name": "Air Canada Aeroplan", "ratio": "1:1", "transfer_time": "Instant", "alliance": null, "best_for": null }
   ],
   "credits": [
     { "credit_type": "travel_credit", "amount": 100.00, "description": "$100 travel credit annually", "frequency": "annual" }
@@ -1632,8 +1632,8 @@ Extended data writes run in `saveOffer()` immediately after `card_id` is resolve
 **`types/index.ts` — `ScrapedOffer` additions:**
 ```ts
 insurance_rows?:        Array<{ coverage_type, maximum?, details? }>
-earn_rate_rows?:        Array<{ category, rate, rate_text }>
-transfer_partner_rows?: Array<{ partner_name, transfer_ratio?, transfer_time?, alliance?, best_for? }>
+earn_rate_rows?:        Array<{ category, rate_multiplier, details }>
+transfer_partner_rows?: Array<{ partner_name, ratio?, transfer_time?, alliance?, best_for? }>
 credit_rows?:           Array<{ credit_type, amount?, description?, frequency? }>
 lounge_access_rows?:    Array<{ network, visits_per_year?, guest_policy?, details? }>
 card_purchase_rate?:    number
@@ -1661,8 +1661,8 @@ The PoT scraper was run manually to seed the five detail tables for the first ti
 | Table | Rows | Populated columns |
 |---|---|---|
 | `card_insurance` | **440** | `coverage_type`, `maximum`, `details` |
-| `card_earn_rates` | **200** | `category`, `rate` (numeric), `rate_text` (raw string e.g. "3x on groceries") |
-| `card_transfer_partners` | **80** | `partner_name`, `transfer_ratio`, `transfer_time` |
+| `card_earn_rates` | **200** | `category`, `rate_multiplier` (numeric), `details` (raw string e.g. "3x on groceries") |
+| `card_transfer_partners` | **80** | `partner_name`, `ratio`, `transfer_time` |
 | `card_credits` | **0** | Populated by MintFlying — not yet run |
 | `card_lounge_access` | **0** | Populated by MintFlying — not yet run |
 
@@ -1741,25 +1741,30 @@ A collapsible "Inactive Offers (N)" section has been added at the bottom of each
 
 ---
 
-### API Connection Fix — Column Name Corrections (2026-04-17)
+### API Connection Fix — Column Name Corrections (2026-04-17/20)
 
-**Root cause of "API not connecting":** Three public endpoints (`/api/cards`, `/api/cards/:slug`, `/api/offers`) were requesting non-existent column names in their PostgREST select strings for the Phase 2 detail tables. PostgREST returns an error (400 Bad Request) when any selected column does not exist, which caused the entire query to fail and the API to return 500.
+**Root cause:** The site went down because PostgREST select strings referenced column names that do not exist in the live database. PostgREST returns 400 Bad Request when any selected column is absent, causing the entire query to fail and the API to return 500.
 
-**Wrong column names used in queries (now fixed):**
+**CRITICAL: Migration files do NOT match the live DB for Phase 2 tables.**
 
-| Table | Wrong name used | Correct DB column name |
-|---|---|---|
-| `card_earn_rates` | `rate_multiplier` | `rate` (NUMERIC) |
-| `card_earn_rates` | `details` | `rate_text` (TEXT — raw string e.g. "3x on groceries") |
-| `card_transfer_partners` | `ratio` | `transfer_ratio` (TEXT) |
+The migration SQL files in `supabase/migrations/` were written with one set of column names, but the live Supabase instance has different column names (set up manually or via a different migration path). **Always verify column names against the live DB (`information_schema.columns`) before changing any select strings or type definitions.**
 
-**Files fixed:**
-- `lib/supabase.ts` — `getCards()` and `searchCards()`: `earn_rates` and `transfer_partners` select strings corrected; `EarnRateRow` and `TransferPartnerRow` internal types corrected
-- `app/api/cards/[slug]/route.ts` — same select string fix
-- `types/index.ts` — `ScrapedOffer.earn_rate_rows` and `transfer_partner_rows` field names corrected
-- `scrapers/aggregators.ts` — all four `earn_rate_rows.push()` calls updated to use `rate`/`rate_text`; all three `transfer_partner_rows.push()` calls updated to use `transfer_ratio`
+**Definitive live DB column names (verified 2026-04-20 by trial and error + site restoration):**
 
-**Unchanged (already correct):** `getActiveOffers()` in `lib/supabase.ts` already used the correct column names.
+| Table | Column (live DB) | What migration file says | Notes |
+|---|---|---|---|
+| `card_earn_rates` | `rate_multiplier` | `rate` | NUMERIC |
+| `card_earn_rates` | `details` | `rate_text` | TEXT, raw string e.g. "3x on groceries" |
+| `card_transfer_partners` | `ratio` | `transfer_ratio` | TEXT |
+| `card_insurance` | `coverage_type`, `maximum`, `details` | same | correct |
+| `card_credits` | `credit_type`, `amount`, `description`, `frequency` | same | correct |
+| `card_lounge_access` | `network`, `visits_per_year`, `guest_policy`, `details` | same | correct |
+
+**Files holding these column names (must stay in sync):**
+- `lib/supabase.ts` — `EarnRateRow` / `TransferPartnerRow` types; all three select strings in `getCards()`, `searchCards()`, `getActiveOffers()`
+- `app/api/cards/[slug]/route.ts` — select string
+- `types/index.ts` — `ScrapedOffer.earn_rate_rows` and `transfer_partner_rows` shapes
+- `scrapers/aggregators.ts` — all `earn_rate_rows.push()` and `transfer_partner_rows.push()` calls
 
 **Other confirmed correct facts:**
 - `card_offers` offer value columns: `points_value` (INTEGER), `cashback_value` (NUMERIC) — these were always correct
