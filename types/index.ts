@@ -179,12 +179,11 @@ export interface ScrapedOffer {
   credit_rows?: Array<{
     credit_type: string
     amount?: number
-    description?: string
-    frequency?: string
+    details?: string
   }>
 
   lounge_access_rows?: Array<{
-    network: string
+    lounge_network: string
     visits_per_year?: number
     guest_policy?: string
     details?: string

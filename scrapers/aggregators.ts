@@ -331,24 +331,24 @@ export class MintFlyingScraper extends BaseScraper {
       const frequency   = /monthly/i.test(description) ? 'monthly'
         : /annual|yearly/i.test(description) ? 'annual'
         : /once|one.time/i.test(description) ? 'once' : undefined
-      credit_rows.push({ credit_type, amount, description, frequency })
+      credit_rows.push({ credit_type, amount, details: description })
     }
 
     // ── Lounge access ─────────────────────────────────────────────────────────
     const lounge_access_rows: NonNullable<ScrapedOffer['lounge_access_rows']> = []
     if (Array.isArray(card.loungeAccess)) {
       for (const l of card.loungeAccess as any[]) {
-        const network = String(l.network ?? l.name ?? l.program ?? '').trim()
-        if (!network) continue
+        const lounge_network = String(l.network ?? l.name ?? l.program ?? '').trim()
+        if (!lounge_network) continue
         lounge_access_rows.push({
-          network,
+          lounge_network,
           visits_per_year: l.visitsPerYear ?? l.visits_per_year ?? undefined,
           guest_policy:    l.guestPolicy   ?? l.guest_policy    ?? undefined,
           details:         l.details       ?? l.description     ?? undefined,
         })
       }
     } else if (typeof card.loungeAccess === 'string' && card.loungeAccess.trim()) {
-      lounge_access_rows.push({ network: card.loungeAccess.trim() })
+      lounge_access_rows.push({ lounge_network: card.loungeAccess.trim() })
     } else if (card.loungeAccess === true) {
       const details: string = typeof card.loungeDetails === 'string' ? card.loungeDetails.trim() : ''
       if (details) {
@@ -357,23 +357,23 @@ export class MintFlyingScraper extends BaseScraper {
           const c = clause.trim()
           if (!c) continue
 
-          // Detect network
-          let network: string
-          if (/maple leaf/i.test(c))      network = 'Air Canada Maple Leaf Lounge'
-          else if (/priority pass/i.test(c)) network = 'Priority Pass'
-          else                              network = c
+          // Detect lounge network
+          let lounge_network: string
+          if (/maple leaf/i.test(c))         lounge_network = 'Air Canada Maple Leaf Lounge'
+          else if (/priority pass/i.test(c)) lounge_network = 'Priority Pass'
+          else                               lounge_network = c
 
           // Detect guest policy
           const guest_policy = /\+?\s*1\s*guest|plus\s+1\s+guest/i.test(c) ? '1 guest included' : undefined
 
-          // Detect visits_per_year — undefined means unlimited or unspecified (pay-per-entry: also leave undefined)
+          // visits_per_year: undefined means unlimited or unspecified
           const visits_per_year: number | undefined = undefined
 
-          lounge_access_rows.push({ network, visits_per_year, guest_policy, details: c })
+          lounge_access_rows.push({ lounge_network, visits_per_year, guest_policy, details: c })
         }
       } else {
         // No loungeDetails — fall back to a generic row
-        lounge_access_rows.push({ network: 'Lounge Access' })
+        lounge_access_rows.push({ lounge_network: 'Lounge Access' })
       }
     }
 

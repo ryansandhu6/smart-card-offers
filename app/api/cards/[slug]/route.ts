@@ -31,8 +31,8 @@ export async function GET(
         insurance:card_insurance(coverage_type, maximum, details),
         earn_rates:card_earn_rates(category, rate_multiplier, details),
         transfer_partners:card_transfer_partners(partner_name, ratio, transfer_time, alliance, best_for),
-        credits:card_credits(credit_type, amount, description, frequency),
-        lounge_access:card_lounge_access(network, visits_per_year, guest_policy, details)
+        credits:card_credits(credit_type, amount, details),
+        lounge_access:card_lounge_access(lounge_network, visits_per_year, guest_policy, details)
       `)
       .eq('slug', slug)
       .eq('is_active', true)

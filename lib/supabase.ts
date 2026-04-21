@@ -64,8 +64,8 @@ export async function getCards(filters?: {
       insurance:card_insurance(coverage_type, maximum, details),
       earn_rates:card_earn_rates(category, rate_multiplier, details),
       transfer_partners:card_transfer_partners(partner_name, ratio, transfer_time, alliance, best_for),
-      credits:card_credits(credit_type, amount, description, frequency),
-      lounge_access:card_lounge_access(network, visits_per_year, guest_policy, details)
+      credits:card_credits(credit_type, amount, details),
+      lounge_access:card_lounge_access(lounge_network, visits_per_year, guest_policy, details)
     `, { count: 'exact' })
     .eq('is_active', true)
     .eq('card_offers.is_active', true)
@@ -137,8 +137,8 @@ export async function searchCards(
       insurance:card_insurance(coverage_type, maximum, details),
       earn_rates:card_earn_rates(category, rate_multiplier, details),
       transfer_partners:card_transfer_partners(partner_name, ratio, transfer_time, alliance, best_for),
-      credits:card_credits(credit_type, amount, description, frequency),
-      lounge_access:card_lounge_access(network, visits_per_year, guest_policy, details)
+      credits:card_credits(credit_type, amount, details),
+      lounge_access:card_lounge_access(lounge_network, visits_per_year, guest_policy, details)
     `)
     .in('id', ids)
     .eq('is_active', true)
@@ -184,8 +184,8 @@ export async function getActiveOffers(limitedTimeOnly = false, page = 1, limit =
         insurance:card_insurance(coverage_type, maximum, details),
         earn_rates:card_earn_rates(category, rate_multiplier, details),
         transfer_partners:card_transfer_partners(partner_name, ratio, transfer_time, alliance, best_for),
-        credits:card_credits(credit_type, amount, description, frequency),
-        lounge_access:card_lounge_access(network, visits_per_year, guest_policy, details)
+        credits:card_credits(credit_type, amount, details),
+        lounge_access:card_lounge_access(lounge_network, visits_per_year, guest_policy, details)
       )
     `, { count: 'exact' })
     .eq('is_active', true)
@@ -377,8 +377,8 @@ export async function getOfferHistoryStats(
 type InsuranceRow       = { coverage_type: string; maximum?: string; details?: string }
 type EarnRateRow        = { category: string; rate_multiplier: number; details: string }
 type TransferPartnerRow = { partner_name: string; ratio?: string; transfer_time?: string; alliance?: string; best_for?: string }
-type CreditRow          = { credit_type: string; amount?: number; description?: string; frequency?: string }
-type LoungeAccessRow    = { network: string; visits_per_year?: number; guest_policy?: string; details?: string }
+type CreditRow          = { credit_type: string; amount?: number; details?: string }
+type LoungeAccessRow    = { lounge_network: string; visits_per_year?: number; guest_policy?: string; details?: string }
 
 async function priorityGuardedUpsert<T extends Record<string, unknown>>(
   table: string,
@@ -444,5 +444,5 @@ export async function upsertCardCredits(cardId: string, rows: CreditRow[], sourc
 }
 
 export async function upsertCardLoungeAccess(cardId: string, rows: LoungeAccessRow[], sourcePriority: number): Promise<void> {
-  await priorityGuardedUpsert('card_lounge_access', cardId, 'network', rows, sourcePriority)
+  await priorityGuardedUpsert('card_lounge_access', cardId, 'lounge_network', rows, sourcePriority)
 }
