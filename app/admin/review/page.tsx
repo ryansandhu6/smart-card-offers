@@ -30,6 +30,25 @@ export type OfferRow = {
 
 export type ActiveCardOption = { id: string; name: string; slug: string }
 
+export type PendingCardUpdate = {
+  id: string
+  name: string
+  slug: string
+  pending_card_data: Record<string, unknown>
+  // Current live values — shown alongside proposed values in the diff table
+  image_url: string | null
+  earn_rate_multipliers: Record<string, number> | null
+  annual_fee_waived_first_year: boolean
+  supplementary_card_fee: number | null
+  foreign_transaction_fee: number | null
+  min_income: number | null
+  minimum_household_income: number | null
+  annual_fee: number | null
+  purchase_rate: number | null
+  cash_advance_rate: number | null
+  balance_transfer_rate: number | null
+}
+
 export type CardGroup = {
   card_id: string
   card_name: string
@@ -65,7 +84,7 @@ export default async function ReviewPage() {
   type ActiveOfferRaw = { id: string; card_id: string; headline: string; points_value: number | null; cashback_value: number | null; spend_requirement: number | null; spend_timeframe_days: number | null; start_month: number | null; is_monthly_bonus: boolean; monthly_points_value: number | null; monthly_spend_requirement: number | null; monthly_cashback_value: number | null; bonus_months: number | null; offer_type: string; is_limited_time: boolean; expires_at: string | null; source_priority: number; source_name: string | null; review_status: string; is_active: boolean; scraped_at: string }
   type CardDetailRaw = { id: string; name: string; slug: string; tier: string; annual_fee: number | null; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; is_active: boolean; has_no_bonus: boolean; foreign_transaction_fee: number | null; min_income: number | null; minimum_household_income: number | null }
 
-  const [{ data: activeRaw }, { data: cardDetails }, { data: allCardsRaw }] = await Promise.all([
+  const [{ data: activeRaw }, { data: cardDetails }, { data: allCardsRaw }, { data: pendingCardUpdatesRaw }] = await Promise.all([
     pendingCardIds.length
       ? supabaseAdmin
           .from('card_offers')
@@ -80,6 +99,11 @@ export default async function ReviewPage() {
           .in('id', pendingCardIds)
       : Promise.resolve({ data: [] as CardDetailRaw[] }),
     supabaseAdmin.from('credit_cards').select('id, name, slug').eq('is_active', true).order('name'),
+    supabaseAdmin
+      .from('credit_cards')
+      .select('id, name, slug, pending_card_data, image_url, earn_rate_multipliers, annual_fee_waived_first_year, supplementary_card_fee, foreign_transaction_fee, min_income, minimum_household_income, annual_fee, purchase_rate, cash_advance_rate, balance_transfer_rate')
+      .eq('has_pending_update', true)
+      .order('name'),
   ])
 
   // Build lookup maps
@@ -143,7 +167,11 @@ export default async function ReviewPage() {
           No offers pending review. Run the scrapers to populate the queue.
         </div>
       ) : (
-        <ReviewQueue groups={groups} allCards={(allCardsRaw ?? []) as ActiveCardOption[]} />
+        <ReviewQueue
+          groups={groups}
+          allCards={(allCardsRaw ?? []) as ActiveCardOption[]}
+          pendingCardUpdates={(pendingCardUpdatesRaw ?? []) as PendingCardUpdate[]}
+        />
       )}
     </div>
   )

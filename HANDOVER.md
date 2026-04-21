@@ -1776,10 +1776,43 @@ The migration SQL files in `supabase/migrations/` were written with one set of c
 
 ---
 
+### Card Data Review Workflow (added 2026-04-20)
+
+**Migration 047** adds two columns to `credit_cards`:
+- `pending_card_data JSONB` — proposed field changes from a scraper run
+- `has_pending_update BOOLEAN DEFAULT false` — flag checked by the review page
+
+**Scraper behaviour change (`lib/scraper-base.ts`):**
+
+For **existing** cards found by slug/keyword match, scrapers no longer write directly to live card fields (`image_url`, `annual_fee`, `foreign_transaction_fee`, `earn_rate_multipliers`, income fields, interest rates, etc.). Instead:
+
+1. The current card row is fetched
+2. Incoming values are diffed against current values (nulls and unchanged fields are skipped)
+3. If any fields differ, they are written to `pending_card_data` and `has_pending_update` is set to `true`
+4. The live card row is left untouched
+
+For **new** cards (created by `ensureCard()`), fields continue to be written directly — no review needed.
+
+**Admin review (`/admin/review`):**
+
+Cards with `has_pending_update = true` appear in a new **Card Data Updates** section below the offer queue. Each card shows:
+- A diff table: Field | Current value | Proposed value
+- **Approve** → spreads `pending_card_data` onto the live card row, clears the flag
+- **Reject** → discards the proposed changes, clears the flag
+
+**Server actions (`app/admin/actions.ts`):**
+- `approveCardUpdate(cardId)` — fetches `pending_card_data`, spreads onto card, clears both columns
+- `rejectCardUpdate(cardId)` — sets `has_pending_update = false`, clears `pending_card_data`
+
+**Fields included in the diff:** `image_url`, `earn_rate_multipliers`, `annual_fee_waived_first_year`, `supplementary_card_fee`, `foreign_transaction_fee`, `min_income`, `minimum_household_income`, `annual_fee`, `purchase_rate`, `cash_advance_rate`, `balance_transfer_rate`
+
+---
+
 ### Remaining TODOs
 
-1. **Run migration 046** in Supabase SQL editor to restore 28 displaced offers to active
-2. **Run MintFlying scraper** to populate `card_lounge_access` — `card_credits` cannot be auto-populated from MintFlying (no structured credits data; requires manual entry)
-3. **Run migration 043** for `card_lounge_access` if the table was created manually with different column names — verify `lounge_network` exists before running scraper
-4. **Frontend integration** — surface detail table arrays (insurance, earn rates, transfer partners, credits, lounge) in the card detail page UI
-5. **`start_month` display** — implement display logic in frontend (see Section 8)
+1. **Run migration 047** in Supabase SQL editor to add `pending_card_data` and `has_pending_update` columns
+2. **Run migration 046** in Supabase SQL editor to restore 28 displaced offers to active
+3. **Run MintFlying scraper** to populate `card_lounge_access` — `card_credits` cannot be auto-populated from MintFlying (no structured credits data; requires manual entry)
+4. **Run migration 043** for `card_lounge_access` if the table was created manually with different column names — verify `lounge_network` exists before running scraper
+5. **Frontend integration** — surface detail table arrays (insurance, earn rates, transfer partners, credits, lounge) in the card detail page UI
+6. **`start_month` display** — implement display logic in frontend (see Section 8)

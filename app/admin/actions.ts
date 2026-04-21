@@ -320,6 +320,35 @@ export async function sendCardToReview(cardId: string): Promise<{ success: boole
   return { success: true }
 }
 
+// ── Card data update review ───────────────────────────────────────────────────
+
+export async function approveCardUpdate(cardId: string) {
+  const { data: card, error: fetchErr } = await supabaseAdmin
+    .from('credit_cards')
+    .select('pending_card_data')
+    .eq('id', cardId)
+    .single()
+  if (fetchErr) throw new Error(fetchErr.message)
+
+  const pending = (card?.pending_card_data ?? {}) as Record<string, unknown>
+  const { error } = await supabaseAdmin
+    .from('credit_cards')
+    .update({ ...pending, has_pending_update: false, pending_card_data: null })
+    .eq('id', cardId)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/review')
+  revalidatePath('/admin')
+}
+
+export async function rejectCardUpdate(cardId: string) {
+  const { error } = await supabaseAdmin
+    .from('credit_cards')
+    .update({ has_pending_update: false, pending_card_data: null })
+    .eq('id', cardId)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/review')
+}
+
 export async function approveOffer(id: string) {
   // Activate the offer — other active offers of the same type are left untouched
   const { error } = await supabaseAdmin

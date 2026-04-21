@@ -1,9 +1,9 @@
 'use client'
 import React, { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer, setCardNoBonus, mergeCard, getCardActiveOffers, mergeCardWithOfferSelection } from '../actions'
+import { approveOffer, rejectOffer, updateOffer, updateCard, createOffer, deleteCard, deleteOffer, setCardNoBonus, mergeCard, getCardActiveOffers, mergeCardWithOfferSelection, approveCardUpdate, rejectCardUpdate } from '../actions'
 import { SOURCE_LABELS, SOURCE_NAMES } from '@/lib/sources'
-import type { CardGroup, OfferRow, ActiveCardOption } from './page'
+import type { CardGroup, OfferRow, ActiveCardOption, PendingCardUpdate } from './page'
 
 const TIERS = ['no-fee', 'entry', 'mid', 'premium', 'super-premium'] as const
 
@@ -33,12 +33,29 @@ type ReviewAdditionalDraft = {
   bonusMonths: string
 }
 
-export default function ReviewQueue({ groups, allCards }: { groups: CardGroup[], allCards: ActiveCardOption[] }) {
+export default function ReviewQueue({ groups, allCards, pendingCardUpdates }: {
+  groups: CardGroup[]
+  allCards: ActiveCardOption[]
+  pendingCardUpdates: PendingCardUpdate[]
+}) {
   return (
     <div className="space-y-6">
       {groups.map(g => (
         <CardSection key={g.card_id} group={g} allCards={allCards} />
       ))}
+      {pendingCardUpdates.length > 0 && (
+        <>
+          <div className="flex items-center justify-between pt-4">
+            <h2 className="text-xl font-semibold">Card Data Updates</h2>
+            <span className="text-sm text-gray-500">
+              {pendingCardUpdates.length} card{pendingCardUpdates.length !== 1 ? 's' : ''} with pending field changes
+            </span>
+          </div>
+          {pendingCardUpdates.map(u => (
+            <CardUpdateSection key={u.id} update={u} />
+          ))}
+        </>
+      )}
     </div>
   )
 }
@@ -1248,6 +1265,130 @@ function ActiveOfferDetail({ label, offer, labelColour }: {
       {offer.is_limited_time && field('Expires', offer.expires_at?.slice(0, 10) ?? 'unknown')}
       {field('Source', offer.source_name)}
     </div>
+  )
+}
+
+// ── Card data update section ─────────────────────────────────────────────────
+
+const FIELD_LABELS: Record<string, string> = {
+  image_url:                    'Image URL',
+  earn_rate_multipliers:        'Earn Rate Multipliers',
+  annual_fee_waived_first_year: 'First Year Free',
+  supplementary_card_fee:       'Supplementary Card Fee ($)',
+  foreign_transaction_fee:      'Foreign Transaction Fee (%)',
+  min_income:                   'Min. Personal Income ($)',
+  minimum_household_income:     'Min. Household Income ($)',
+  annual_fee:                   'Annual Fee ($)',
+  purchase_rate:                'Purchase Rate (%)',
+  cash_advance_rate:            'Cash Advance Rate (%)',
+  balance_transfer_rate:        'Balance Transfer Rate (%)',
+}
+
+function formatCardValue(field: string, value: unknown): string {
+  if (value == null) return '—'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'object')  return JSON.stringify(value)
+  if (typeof value === 'number') {
+    if (field === 'annual_fee' || field.includes('income') || field.includes('fee') && !field.includes('rate'))
+      return `$${value.toLocaleString('en-CA')}`
+    if (field.includes('rate'))  return `${value}%`
+    return String(value)
+  }
+  return String(value)
+}
+
+function CardUpdateSection({ update }: { update: PendingCardUpdate }) {
+  const [isPending, startTrans] = useTransition()
+  const [err, setErr]           = useState<string | null>(null)
+  const router = useRouter()
+
+  const proposed = update.pending_card_data
+  const fields   = Object.keys(proposed)
+
+  function getCurrentValue(field: string): unknown {
+    return (update as Record<string, unknown>)[field] ?? null
+  }
+
+  function handleApprove() {
+    setErr(null)
+    startTrans(async () => {
+      try {
+        await approveCardUpdate(update.id)
+        router.refresh()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Approve failed')
+      }
+    })
+  }
+
+  function handleReject() {
+    setErr(null)
+    startTrans(async () => {
+      try {
+        await rejectCardUpdate(update.id)
+        router.refresh()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Reject failed')
+      }
+    })
+  }
+
+  return (
+    <section className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-3 bg-gray-50 border-b flex items-center gap-3 flex-wrap">
+        <span className="font-semibold">{update.name}</span>
+        <span className="text-xs font-mono text-gray-400">{update.slug}</span>
+        <span className="ml-auto inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+          {fields.length} field{fields.length !== 1 ? 's' : ''} changed
+        </span>
+      </div>
+
+      {/* Diff table */}
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 border-b text-gray-500 text-xs uppercase tracking-wide">
+          <tr>
+            <Th>Field</Th>
+            <Th>Current</Th>
+            <Th>Proposed</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {fields.map(field => (
+            <tr key={field}>
+              <td className="px-4 py-2.5 font-medium text-gray-600">
+                {FIELD_LABELS[field] ?? field}
+              </td>
+              <td className="px-4 py-2.5 text-gray-400 max-w-xs truncate font-mono text-xs">
+                {formatCardValue(field, getCurrentValue(field))}
+              </td>
+              <td className="px-4 py-2.5 text-gray-800 max-w-xs truncate font-mono text-xs font-medium">
+                {formatCardValue(field, proposed[field])}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Actions */}
+      <div className="px-5 py-3 border-t bg-gray-50 flex items-center gap-3">
+        <button
+          onClick={handleApprove}
+          disabled={isPending}
+          className="text-sm bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 disabled:opacity-40"
+        >
+          {isPending ? 'Saving…' : 'Approve'}
+        </button>
+        <button
+          onClick={handleReject}
+          disabled={isPending}
+          className="text-sm bg-red-500 text-white px-3 py-1.5 rounded hover:bg-red-600 disabled:opacity-40"
+        >
+          Reject
+        </button>
+        {err && <span className="text-xs text-red-600">{err}</span>}
+      </div>
+    </section>
   )
 }
 

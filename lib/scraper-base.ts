@@ -222,45 +222,44 @@ export abstract class BaseScraper {
         if (card) {
           card_id = card.id
 
-          // ── Null-guarded card writes ─────────────────────────────────────
-          // Each field is only written when the DB value is currently NULL.
-          // We run separate queries per field to avoid AND-chaining conditions
-          // (which would skip ALL updates if even one field is already populated).
-          if (offer.image_url) {
-            await supabaseAdmin.from('credit_cards').update({ image_url: offer.image_url })
-              .eq('id', card_id).is('image_url', null)
-          }
-          if (offer.earn_rate_multipliers && Object.keys(offer.earn_rate_multipliers).length) {
-            await supabaseAdmin.from('credit_cards').update({ earn_rate_multipliers: offer.earn_rate_multipliers })
-              .eq('id', card_id).is('earn_rate_multipliers', null)
-          }
-          if (offer.card_annual_fee_waived != null) {
-            await supabaseAdmin.from('credit_cards').update({ annual_fee_waived_first_year: offer.card_annual_fee_waived })
-              .eq('id', card_id).is('annual_fee_waived_first_year', null)
-          }
-          if (offer.card_supplementary_fee != null) {
-            await supabaseAdmin.from('credit_cards').update({ supplementary_card_fee: offer.card_supplementary_fee })
-              .eq('id', card_id).is('supplementary_card_fee', null)
-          }
-          if (offer.card_foreign_transaction_fee != null) {
-            const { error: fxErr } = await supabaseAdmin.from('credit_cards').update({ foreign_transaction_fee: offer.card_foreign_transaction_fee })
-              .eq('id', card_id).is('foreign_transaction_fee', null)
-            if (fxErr) console.warn(`[${this.name}] card-field fx_fee write failed: ${fxErr.message} (${offer.card_name})`)
-          }
-          if (offer.card_min_income != null) {
-            const { error: incErr } = await supabaseAdmin.from('credit_cards').update({ min_income: offer.card_min_income })
-              .eq('id', card_id).is('min_income', null)
-            if (incErr) console.warn(`[${this.name}] card-field min_income write failed: ${incErr.message} (${offer.card_name})`)
-          }
-          if (offer.card_min_household_income != null) {
-            const { error: hhErr } = await supabaseAdmin.from('credit_cards').update({ minimum_household_income: offer.card_min_household_income })
-              .eq('id', card_id).is('minimum_household_income', null)
-            if (hhErr) console.warn(`[${this.name}] card-field min_household write failed: ${hhErr.message} (${offer.card_name})`)
-          }
-          // Annual fee only written when DB value is still the default (0).
-          if (offer.card_annual_fee != null) {
-            await supabaseAdmin.from('credit_cards').update({ annual_fee: offer.card_annual_fee })
-              .eq('id', card_id).eq('annual_fee', 0)
+          // ── Pending card data diff ───────────────────────────────────────
+          // For existing cards, queue field changes for admin review instead
+          // of writing directly to live fields. Interest rates are also included
+          // so all card-level field changes go through a single review path.
+          const { data: currentCard } = await supabaseAdmin
+            .from('credit_cards')
+            .select('image_url, earn_rate_multipliers, annual_fee_waived_first_year, supplementary_card_fee, foreign_transaction_fee, min_income, minimum_household_income, annual_fee, purchase_rate, cash_advance_rate, balance_transfer_rate')
+            .eq('id', card_id)
+            .single()
+
+          if (currentCard) {
+            const diff: Record<string, unknown> = {}
+            const normalize = (v: unknown): unknown =>
+              v != null && typeof v === 'object' ? JSON.stringify(v) : v ?? null
+            const propose = (field: string, current: unknown, incoming: unknown) => {
+              if (incoming == null) return
+              if (normalize(current) !== normalize(incoming)) diff[field] = incoming
+            }
+            propose('image_url',                    currentCard.image_url,                    offer.image_url)
+            propose('earn_rate_multipliers',        currentCard.earn_rate_multipliers,        offer.earn_rate_multipliers)
+            propose('annual_fee_waived_first_year', currentCard.annual_fee_waived_first_year, offer.card_annual_fee_waived)
+            propose('supplementary_card_fee',       currentCard.supplementary_card_fee,       offer.card_supplementary_fee)
+            propose('foreign_transaction_fee',      currentCard.foreign_transaction_fee,      offer.card_foreign_transaction_fee)
+            propose('min_income',                   currentCard.min_income,                   offer.card_min_income)
+            propose('minimum_household_income',     currentCard.minimum_household_income,     offer.card_min_household_income)
+            propose('annual_fee',                   currentCard.annual_fee,                   offer.card_annual_fee)
+            propose('purchase_rate',                currentCard.purchase_rate,                offer.card_purchase_rate)
+            propose('cash_advance_rate',            currentCard.cash_advance_rate,            offer.card_cash_advance_rate)
+            propose('balance_transfer_rate',        currentCard.balance_transfer_rate,        offer.card_balance_transfer_rate)
+
+            if (Object.keys(diff).length > 0) {
+              const { error: diffErr } = await supabaseAdmin
+                .from('credit_cards')
+                .update({ pending_card_data: diff, has_pending_update: true })
+                .eq('id', card_id)
+              if (diffErr) console.warn(`[${this.name}] pending_card_data write failed: ${diffErr.message} (${offer.card_name})`)
+              else console.log(`[${this.name}] pending card update queued for "${offer.card_name}": ${Object.keys(diff).join(', ')}`)
+            }
           }
         } else {
           const ensured = await this.ensureCard(offer)
@@ -293,16 +292,19 @@ export abstract class BaseScraper {
         await upsertCardCredits(card_id, offer.credit_rows, p)
       if (offer.lounge_access_rows?.length)
         await upsertCardLoungeAccess(card_id, offer.lounge_access_rows, p)
-      // Interest rates → null-guarded writes to credit_cards
-      if (offer.card_purchase_rate != null)
-        await supabaseAdmin.from('credit_cards').update({ purchase_rate: offer.card_purchase_rate })
-          .eq('id', card_id).is('purchase_rate', null)
-      if (offer.card_cash_advance_rate != null)
-        await supabaseAdmin.from('credit_cards').update({ cash_advance_rate: offer.card_cash_advance_rate })
-          .eq('id', card_id).is('cash_advance_rate', null)
-      if (offer.card_balance_transfer_rate != null)
-        await supabaseAdmin.from('credit_cards').update({ balance_transfer_rate: offer.card_balance_transfer_rate })
-          .eq('id', card_id).is('balance_transfer_rate', null)
+      // Interest rates → null-guarded direct writes only for brand-new cards.
+      // Existing cards receive proposed rate changes via pending_card_data diff above.
+      if (isNewCard) {
+        if (offer.card_purchase_rate != null)
+          await supabaseAdmin.from('credit_cards').update({ purchase_rate: offer.card_purchase_rate })
+            .eq('id', card_id).is('purchase_rate', null)
+        if (offer.card_cash_advance_rate != null)
+          await supabaseAdmin.from('credit_cards').update({ cash_advance_rate: offer.card_cash_advance_rate })
+            .eq('id', card_id).is('cash_advance_rate', null)
+        if (offer.card_balance_transfer_rate != null)
+          await supabaseAdmin.from('credit_cards').update({ balance_transfer_rate: offer.card_balance_transfer_rate })
+            .eq('id', card_id).is('balance_transfer_rate', null)
+      }
     }
 
     // ── Post-resolution validation ──────────────────────────────────────────
