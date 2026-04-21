@@ -335,45 +335,66 @@ export class MintFlyingScraper extends BaseScraper {
     }
 
     // ── Lounge access ─────────────────────────────────────────────────────────
+    // ── Lounge clause parser ──────────────────────────────────────────────────
+    // Shared helper: takes one descriptive clause and returns a structured row.
+    const parseLoungeClause = (clause: string): {
+      lounge_network: string
+      visits_per_year: number | undefined
+      guest_policy: string | undefined
+      details: string
+    } => {
+      const c = clause.trim()
+
+      // Detect normalized network name by keyword
+      let lounge_network: string
+      if      (/maple leaf/i.test(c))                           lounge_network = 'Air Canada Maple Leaf Lounge'
+      else if (/priority pass/i.test(c))                        lounge_network = 'Priority Pass'
+      else if (/airport companion/i.test(c))                    lounge_network = 'Visa Airport Companion'
+      else if (/dragonpass|travel pass|mastercard travel/i.test(c)) lounge_network = 'DragonPass'
+      else if (/plaza premium/i.test(c))                        lounge_network = 'Plaza Premium Lounges'
+      else if (/westjet/i.test(c))                              lounge_network = 'WestJet Lounges'
+      else                                                       lounge_network = c  // full clause as fallback
+
+      // Extract visits_per_year from phrases like "6 complimentary visits", "4 visits per year"
+      const visitsMatch = c.match(/(\d+)\s+(?:complimentary\s+(?:lounge\s+)?)?visits?(?:\s+per\s+(?:membership\s+)?year)?/i)
+      const visits_per_year: number | undefined = visitsMatch ? parseInt(visitsMatch[1]) : undefined
+
+      // Detect guest policy
+      const guest_policy = /\+?\s*1\s*guest|plus\s+1\s+guest/i.test(c) ? '1 guest included' : undefined
+
+      // Always store the full original clause as details
+      return { lounge_network, visits_per_year, guest_policy, details: c }
+    }
+
     const lounge_access_rows: NonNullable<ScrapedOffer['lounge_access_rows']> = []
     if (Array.isArray(card.loungeAccess)) {
       for (const l of card.loungeAccess as any[]) {
-        const lounge_network = String(l.network ?? l.name ?? l.program ?? '').trim()
-        if (!lounge_network) continue
+        const rawNetwork = String(l.network ?? l.name ?? l.program ?? '').trim()
+        if (!rawNetwork) continue
+        // Parse through the normalizer so structured-array sources get clean names too
+        const parsed = parseLoungeClause(
+          l.details ?? l.description ?? rawNetwork
+        )
         lounge_access_rows.push({
-          lounge_network,
-          visits_per_year: l.visitsPerYear ?? l.visits_per_year ?? undefined,
-          guest_policy:    l.guestPolicy   ?? l.guest_policy    ?? undefined,
-          details:         l.details       ?? l.description     ?? undefined,
+          lounge_network: parsed.lounge_network,
+          visits_per_year: l.visitsPerYear ?? l.visits_per_year ?? parsed.visits_per_year,
+          guest_policy:    l.guestPolicy   ?? l.guest_policy    ?? parsed.guest_policy,
+          details:         parsed.details,
         })
       }
     } else if (typeof card.loungeAccess === 'string' && card.loungeAccess.trim()) {
-      lounge_access_rows.push({ lounge_network: card.loungeAccess.trim() })
+      lounge_access_rows.push(parseLoungeClause(card.loungeAccess.trim()))
     } else if (card.loungeAccess === true) {
-      const details: string = typeof card.loungeDetails === 'string' ? card.loungeDetails.trim() : ''
-      if (details) {
+      const rawDetails: string = typeof card.loungeDetails === 'string' ? card.loungeDetails.trim() : ''
+      if (rawDetails) {
         // Split on ";" — each clause describes one lounge program
-        for (const clause of details.split(';')) {
-          const c = clause.trim()
-          if (!c) continue
-
-          // Detect lounge network
-          let lounge_network: string
-          if (/maple leaf/i.test(c))         lounge_network = 'Air Canada Maple Leaf Lounge'
-          else if (/priority pass/i.test(c)) lounge_network = 'Priority Pass'
-          else                               lounge_network = c
-
-          // Detect guest policy
-          const guest_policy = /\+?\s*1\s*guest|plus\s+1\s+guest/i.test(c) ? '1 guest included' : undefined
-
-          // visits_per_year: undefined means unlimited or unspecified
-          const visits_per_year: number | undefined = undefined
-
-          lounge_access_rows.push({ lounge_network, visits_per_year, guest_policy, details: c })
+        for (const clause of rawDetails.split(';')) {
+          if (!clause.trim()) continue
+          lounge_access_rows.push(parseLoungeClause(clause))
         }
       } else {
         // No loungeDetails — fall back to a generic row
-        lounge_access_rows.push({ lounge_network: 'Lounge Access' })
+        lounge_access_rows.push({ lounge_network: 'Lounge Access', visits_per_year: undefined, guest_policy: undefined, details: 'Lounge Access' })
       }
     }
 
