@@ -69,6 +69,12 @@ export async function updateCard(
     min_income?: number | null
     minimum_household_income?: number | null
     has_no_bonus?: boolean
+    supplementary_card_fee?: number | null
+    apply_url?: string | null
+    purchase_rate?: number | null
+    cash_advance_rate?: number | null
+    credit_score_min?: string | null
+    is_featured?: boolean
   }
 ) {
   // Tag as manual when description is explicitly set by an admin

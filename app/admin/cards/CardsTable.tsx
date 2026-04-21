@@ -23,6 +23,12 @@ type Card = {
   foreign_transaction_fee: number | null
   min_income: number | null
   minimum_household_income: number | null
+  supplementary_card_fee: number | null
+  apply_url: string | null
+  purchase_rate: number | null
+  cash_advance_rate: number | null
+  credit_score_min: string | null
+  is_featured: boolean
   issuer: { name: string } | null
 }
 
@@ -44,7 +50,7 @@ export default function CardsTable({ cards, issuers }: { cards: Card[]; issuers:
       )
     : cards
 
-  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; foreign_transaction_fee: number | null; min_income: number | null; minimum_household_income: number | null }) {
+  async function handleSave(card: Card, draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; foreign_transaction_fee: number | null; min_income: number | null; minimum_household_income: number | null; supplementary_card_fee: number | null; apply_url: string | null; purchase_rate: number | null; cash_advance_rate: number | null; credit_score_min: string | null; is_featured: boolean }) {
     setError(null)
     startTrans(async () => {
       try {
@@ -325,12 +331,14 @@ function ViewRow({
 
 // ── Edit row ──────────────────────────────────────────────────────────────────
 
+const CREDIT_SCORE_OPTIONS = ['fair', 'good', 'very-good', 'excellent'] as const
+
 function EditRow({
   card, isPending, onSave, onCancel,
 }: {
   card: Card
   isPending: boolean
-  onSave: (draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; foreign_transaction_fee: number | null; min_income: number | null; minimum_household_income: number | null }) => void
+  onSave: (draft: { name: string; tier: string; is_active: boolean; annual_fee: number; annual_fee_waived_first_year: boolean; short_description: string | null; referral_url: string | null; image_url: string | null; foreign_transaction_fee: number | null; min_income: number | null; minimum_household_income: number | null; supplementary_card_fee: number | null; apply_url: string | null; purchase_rate: number | null; cash_advance_rate: number | null; credit_score_min: string | null; is_featured: boolean }) => void
   onCancel: () => void
 }) {
   const [name, setName]                                       = useState(card.name)
@@ -344,6 +352,12 @@ function EditRow({
   const [fx_fee, setFxFee]                                    = useState(card.foreign_transaction_fee?.toString() ?? '')
   const [min_income, setMinIncome]                            = useState(card.min_income?.toString() ?? '')
   const [min_household, setMinHousehold]                      = useState(card.minimum_household_income?.toString() ?? '')
+  const [supp_fee, setSuppFee]                                = useState(card.supplementary_card_fee?.toString() ?? '')
+  const [apply_url, setApplyUrl]                              = useState(card.apply_url ?? '')
+  const [purchase_rate, setPurchaseRate]                      = useState(card.purchase_rate?.toString() ?? '')
+  const [cash_advance_rate, setCashAdvanceRate]               = useState(card.cash_advance_rate?.toString() ?? '')
+  const [credit_score_min, setCreditScoreMin]                 = useState(card.credit_score_min ?? '')
+  const [is_featured, setIsFeatured]                         = useState(card.is_featured)
 
   return (
     <>
@@ -388,6 +402,12 @@ function EditRow({
               foreign_transaction_fee: fx_fee !== '' ? Number(fx_fee) : null,
               min_income: min_income !== '' ? Number(min_income) : null,
               minimum_household_income: min_household !== '' ? Number(min_household) : null,
+              supplementary_card_fee: supp_fee !== '' ? Number(supp_fee) : null,
+              apply_url: apply_url.trim() || null,
+              purchase_rate: purchase_rate !== '' ? Number(purchase_rate) : null,
+              cash_advance_rate: cash_advance_rate !== '' ? Number(cash_advance_rate) : null,
+              credit_score_min: credit_score_min || null,
+              is_featured,
             })}
             disabled={isPending}
             className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 disabled:opacity-40"
@@ -494,6 +514,76 @@ function EditRow({
                 className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
                 placeholder="e.g. 80000"
               />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Supplementary Card Fee ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={supp_fee}
+                onChange={e => setSuppFee(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+                placeholder="e.g. 50"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Purchase Rate (APR %)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={purchase_rate}
+                onChange={e => setPurchaseRate(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+                placeholder="e.g. 20.99"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Cash Advance Rate (%)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={cash_advance_rate}
+                onChange={e => setCashAdvanceRate(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+                placeholder="e.g. 22.99"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Apply URL</label>
+            <input
+              type="url"
+              value={apply_url}
+              onChange={e => setApplyUrl(e.target.value)}
+              placeholder="https://…"
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Min. Credit Score</label>
+              <select
+                value={credit_score_min}
+                onChange={e => setCreditScoreMin(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+              >
+                <option value="">— unknown —</option>
+                {CREDIT_SCORE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div className="flex items-end pb-1">
+              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={is_featured}
+                  onChange={e => setIsFeatured(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Featured card
+              </label>
             </div>
           </div>
         </td>

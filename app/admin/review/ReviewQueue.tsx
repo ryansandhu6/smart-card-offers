@@ -133,6 +133,12 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
   const [fxFee,       setFxFee]       = useState(group.card_foreign_transaction_fee?.toString() ?? '')
   const [minIncome,   setMinIncome]   = useState(group.card_min_income?.toString() ?? '')
   const [minHousehold, setMinHousehold] = useState(group.card_min_household_income?.toString() ?? '')
+  const [suppFee,     setSuppFee]     = useState(group.card_supplementary_card_fee?.toString() ?? '')
+  const [applyUrl,    setApplyUrl]    = useState(group.card_apply_url ?? '')
+  const [purchaseRate, setPurchaseRate] = useState(group.card_purchase_rate?.toString() ?? '')
+  const [cashAdvRate, setCashAdvRate] = useState(group.card_cash_advance_rate?.toString() ?? '')
+  const [creditScoreMin, setCreditScoreMin] = useState(group.card_credit_score_min ?? '')
+  const [isFeatured,  setIsFeatured]  = useState(group.card_is_featured)
 
   function handleSaveCard() {
     setSaveErr(null)
@@ -151,6 +157,12 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
           foreign_transaction_fee: fxFee !== '' ? Number(fxFee) : null,
           min_income: minIncome !== '' ? Number(minIncome) : null,
           minimum_household_income: minHousehold !== '' ? Number(minHousehold) : null,
+          supplementary_card_fee: suppFee !== '' ? Number(suppFee) : null,
+          apply_url: applyUrl.trim() || null,
+          purchase_rate: purchaseRate !== '' ? Number(purchaseRate) : null,
+          cash_advance_rate: cashAdvRate !== '' ? Number(cashAdvRate) : null,
+          credit_score_min: creditScoreMin || null,
+          is_featured: isFeatured,
         })
         setSavedOk(true)
         router.refresh()
@@ -428,6 +440,78 @@ function CardSection({ group, allCards }: { group: CardGroup, allCards: ActiveCa
                 placeholder="e.g. 80000"
                 className={inputCls}
               />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Supplementary Card Fee ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={suppFee}
+                onChange={e => setSuppFee(e.target.value)}
+                placeholder="e.g. 50"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Purchase Rate (APR %)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={purchaseRate}
+                onChange={e => setPurchaseRate(e.target.value)}
+                placeholder="e.g. 20.99"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Cash Advance Rate (%)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={cashAdvRate}
+                onChange={e => setCashAdvRate(e.target.value)}
+                placeholder="e.g. 22.99"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Min. Credit Score</label>
+              <select
+                value={creditScoreMin}
+                onChange={e => setCreditScoreMin(e.target.value)}
+                className={inputCls}
+              >
+                <option value="">— unknown —</option>
+                <option value="fair">fair</option>
+                <option value="good">good</option>
+                <option value="very-good">very-good</option>
+                <option value="excellent">excellent</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Apply URL</label>
+              <input
+                type="url"
+                value={applyUrl}
+                onChange={e => setApplyUrl(e.target.value)}
+                placeholder="https://…"
+                className={inputCls}
+              />
+            </div>
+            <div className="flex items-end pb-1">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id={`featured-${group.card_id}`}
+                  checked={isFeatured}
+                  onChange={e => setIsFeatured(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span>Featured card</span>
+              </label>
             </div>
           </div>
           <div className="flex items-center gap-3">
