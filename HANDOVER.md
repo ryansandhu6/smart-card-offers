@@ -1,6 +1,6 @@
 # Smart Card Offers — Backend Handover Document
 
-> Last updated: 2026-04-17 (migrations 011–046: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup, monthly bonus fields, scraper safety hardening, offer archival on approve, priority inversion fix, source_name tracking, referral URL, offer review queue polish, FX/income fields, interest rates, card detail tables — insurance, earn rates, transfer partners, credits, lounge access; Phase 2 tables populated, offer system fixes, admin UI improvements)
+> Last updated: 2026-04-20 (migrations 011–046: slug fixes, logos, tags, content, scraper cleanup, cross-validation, review queue, duplicate card merge, dashboard improvements, final audit cleanup, monthly bonus fields, scraper safety hardening, offer archival on approve, priority inversion fix, source_name tracking, referral URL, offer review queue polish, FX/income fields, interest rates, card detail tables — insurance, earn rates, transfer partners, credits, lounge access; Phase 2 tables populated, offer system fixes, admin UI improvements)
 > This document covers the full backend for smartcardoffers.ca — a Canadian credit card comparison and offers aggregation site.
 
 ---
@@ -1575,7 +1575,7 @@ All card endpoints (`/api/cards`, `/api/cards/:slug`, `/api/offers` card objects
     { "credit_type": "travel_credit", "amount": 100.00, "details": "$100 travel credit annually" }
   ],
   "lounge_access": [
-    { "network": "Priority Pass", "visits_per_year": null, "guest_policy": "2 free guests per visit", "details": null }
+    { "lounge_network": "Priority Pass", "visits_per_year": 6, "guest_policy": null, "details": "Priority Pass membership with 6 complimentary lounge visits" }
   ]
 }
 ```
@@ -1668,16 +1668,29 @@ The PoT scraper was run manually to seed the five detail tables for the first ti
 
 MintFlying needs to be run to seed `card_lounge_access`. **`card_credits` cannot be populated from MintFlying** — MintFlying has no structured credits data. The `pros` array is unstructured prose only (e.g. "$100 NEXUS credit", "4th night free on Aeroplan hotel redemptions"). `card_credits` for MintFlying cards requires manual entry.
 
-**MintFlying lounge extraction (updated 2026-04-17)**
+**MintFlying lounge extraction (updated 2026-04-20)**
 
-The scraper now parses `loungeDetails` (semicolon-delimited string) instead of emitting a generic `{ network: 'Lounge Access' }` row. Parsing rules:
+The scraper parses `loungeDetails` (semicolon-delimited string) via a shared `parseLoungeClause()` helper. Parsing rules:
 - Split on `";"` — each clause is one lounge program
-- `"Maple Leaf"` in clause → `network = 'Air Canada Maple Leaf Lounge'`
-- `"Priority Pass"` in clause → `network = 'Priority Pass'`
-- `/plus 1 guest|\+?\s*1 guest/i` in clause → `guest_policy = '1 guest included'`
-- `visits_per_year` is always left `undefined` (type is `number | undefined`; unlimited and pay-per-entry are both stored as omitted)
-- Full clause stored as `details`
-- Fallback when `loungeDetails` is absent but `loungeAccess === true`: `{ network: 'Lounge Access' }`
+- **Skip clauses that start with `"additional"` (case-insensitive)** — these are pricing addenda ("additional visits at $X each"), not network entries
+- Network normalization (keyword match, case-insensitive):
+  - `"maple leaf"` → `lounge_network = 'Air Canada Maple Leaf Lounge'`
+  - `"priority pass"` → `lounge_network = 'Priority Pass'`
+  - `"airport companion"` → `lounge_network = 'Visa Airport Companion'`
+  - `"dragonpass"` / `"travel pass"` / `"mastercard travel"` → `lounge_network = 'DragonPass'`
+  - `"plaza premium"` → `lounge_network = 'Plaza Premium Lounges'`
+  - `"westjet"` → `lounge_network = 'WestJet Lounges'`
+  - No match → full clause stored as-is (fallback)
+- `visits_per_year` extracted via `/(\d+)\s+(?:complimentary\s+(?:lounge\s+)?)?visits?(?:\s+per\s+(?:membership\s+)?year)?/i`; `undefined` when not found
+- `/plus 1 guest|\+?\s*1 guest/i` in clause → `guest_policy = '1 guest included'`; `undefined` otherwise
+- Full original clause always stored as `details`
+- Fallback when `loungeDetails` is absent but `loungeAccess === true`: `{ lounge_network: 'Lounge Access' }`
+
+**To clean stale bad rows from the DB** (run once in Supabase SQL editor):
+```sql
+DELETE FROM public.card_lounge_access
+WHERE lounge_network ILIKE 'additional visits%';
+```
 
 ---
 
