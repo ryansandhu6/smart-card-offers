@@ -1503,7 +1503,7 @@ This session hardened the data pipeline (review queue filtering, scraper schedul
 | 039 | `039_card_insurance.sql` | New table `card_insurance (card_id, coverage_type, maximum, details, source_priority, scraped_at)` — unique on `(card_id, coverage_type)` |
 | 040 | `040_card_earn_rates.sql` | New table `card_earn_rates` — **migration file uses `rate`/`rate_text` but live DB has `rate_multiplier`/`details`** — unique on `(card_id, category)` |
 | 041 | `041_card_transfer_partners.sql` | New table `card_transfer_partners` — **migration file uses `transfer_ratio` but live DB has `ratio`** — unique on `(card_id, partner_name)` |
-| 042 | `042_card_credits.sql` | New table `card_credits (card_id, credit_type, amount, description, frequency, source_priority, scraped_at)` — unique on `(card_id, credit_type)` |
+| 042 | `042_card_credits.sql` | New table `card_credits` — **migration file uses `description`/`frequency` but live DB has `details` only (no `frequency` column)** — unique on `(card_id, credit_type)` |
 | 043 | `043_card_lounge_access.sql` | New table `card_lounge_access (card_id, network, visits_per_year, guest_policy, details, source_priority, scraped_at)` — unique on `(card_id, network)` |
 | 044 | `044_interest_rates.sql` | Added `purchase_rate`, `cash_advance_rate`, `balance_transfer_rate NUMERIC(5,2)` to `credit_cards` |
 
@@ -1572,7 +1572,7 @@ All card endpoints (`/api/cards`, `/api/cards/:slug`, `/api/offers` card objects
     { "partner_name": "Air Canada Aeroplan", "ratio": "1:1", "transfer_time": "Instant", "alliance": null, "best_for": null }
   ],
   "credits": [
-    { "credit_type": "travel_credit", "amount": 100.00, "description": "$100 travel credit annually", "frequency": "annual" }
+    { "credit_type": "travel_credit", "amount": 100.00, "details": "$100 travel credit annually" }
   ],
   "lounge_access": [
     { "network": "Priority Pass", "visits_per_year": null, "guest_policy": "2 free guests per visit", "details": null }
@@ -1634,8 +1634,8 @@ Extended data writes run in `saveOffer()` immediately after `card_id` is resolve
 insurance_rows?:        Array<{ coverage_type, maximum?, details? }>
 earn_rate_rows?:        Array<{ category, rate_multiplier, details }>
 transfer_partner_rows?: Array<{ partner_name, ratio?, transfer_time?, alliance?, best_for? }>
-credit_rows?:           Array<{ credit_type, amount?, description?, frequency? }>
-lounge_access_rows?:    Array<{ network, visits_per_year?, guest_policy?, details? }>
+credit_rows?:           Array<{ credit_type, amount?, details? }>
+lounge_access_rows?:    Array<{ lounge_network, visits_per_year?, guest_policy?, details? }>
 card_purchase_rate?:    number
 card_cash_advance_rate?: number
 card_balance_transfer_rate?: number
@@ -1757,14 +1757,14 @@ The migration SQL files in `supabase/migrations/` were written with one set of c
 | `card_earn_rates` | `details` | `rate_text` | TEXT, raw string e.g. "3x on groceries" |
 | `card_transfer_partners` | `ratio` | `transfer_ratio` | TEXT |
 | `card_insurance` | `coverage_type`, `maximum`, `details` | same | correct |
-| `card_credits` | `credit_type`, `amount`, `description`, `frequency` | same | correct |
-| `card_lounge_access` | `network`, `visits_per_year`, `guest_policy`, `details` | same | correct |
+| `card_credits` | `credit_type`, `amount`, `details` | `description`, `frequency` | no `frequency` col in live DB |
+| `card_lounge_access` | `lounge_network`, `visits_per_year`, `guest_policy`, `details` | `network` | verified 2026-04-20 |
 
 **Files holding these column names (must stay in sync):**
-- `lib/supabase.ts` — `EarnRateRow` / `TransferPartnerRow` types; all three select strings in `getCards()`, `searchCards()`, `getActiveOffers()`
+- `lib/supabase.ts` — `EarnRateRow` / `TransferPartnerRow` / `CreditRow` / `LoungeAccessRow` types; all three select strings in `getCards()`, `searchCards()`, `getActiveOffers()`; `upsertCardLoungeAccess` conflict key
 - `app/api/cards/[slug]/route.ts` — select string
-- `types/index.ts` — `ScrapedOffer.earn_rate_rows` and `transfer_partner_rows` shapes
-- `scrapers/aggregators.ts` — all `earn_rate_rows.push()` and `transfer_partner_rows.push()` calls
+- `types/index.ts` — `ScrapedOffer` array shapes (`earn_rate_rows`, `transfer_partner_rows`, `credit_rows`, `lounge_access_rows`)
+- `scrapers/aggregators.ts` — all `push()` calls for each detail table
 
 **Other confirmed correct facts:**
 - `card_offers` offer value columns: `points_value` (INTEGER), `cashback_value` (NUMERIC) — these were always correct
@@ -1779,6 +1779,7 @@ The migration SQL files in `supabase/migrations/` were written with one set of c
 ### Remaining TODOs
 
 1. **Run migration 046** in Supabase SQL editor to restore 28 displaced offers to active
-2. **Run MintFlying scraper** to populate `card_credits` and `card_lounge_access`
-3. **Frontend integration** — surface detail table arrays (insurance, earn rates, transfer partners, credits, lounge) in the card detail page UI
-4. **`start_month` display** — implement display logic in frontend (see Section 8)
+2. **Run MintFlying scraper** to populate `card_lounge_access` — `card_credits` cannot be auto-populated from MintFlying (no structured credits data; requires manual entry)
+3. **Run migration 043** for `card_lounge_access` if the table was created manually with different column names — verify `lounge_network` exists before running scraper
+4. **Frontend integration** — surface detail table arrays (insurance, earn rates, transfer partners, credits, lounge) in the card detail page UI
+5. **`start_month` display** — implement display logic in frontend (see Section 8)
