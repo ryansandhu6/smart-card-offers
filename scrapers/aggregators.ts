@@ -390,6 +390,7 @@ export class MintFlyingScraper extends BaseScraper {
         // Split on ";" — each clause describes one lounge program
         for (const clause of rawDetails.split(';')) {
           if (!clause.trim()) continue
+          if (/^additional\s/i.test(clause.trim())) continue
           lounge_access_rows.push(parseLoungeClause(clause))
         }
       } else {
